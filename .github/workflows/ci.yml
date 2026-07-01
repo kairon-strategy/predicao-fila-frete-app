@@ -1,0 +1,121 @@
+# =============================================================================
+# Kairon Frete — CI (quality gate)
+# -----------------------------------------------------------------------------
+# Runs on every pull request and on every push to any branch. Deploy is handled
+# separately by deploy.yml (push to main only), so here we simply run lint,
+# type-check and the test suite against real Postgres + Redis service containers.
+# =============================================================================
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**" # all branches; deploy.yml handles the main-only release step
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, type-check & tests
+    runs-on: ubuntu-latest
+
+    # ------------------------------------------------------------------ #
+    # Service containers. Tests honor TEST_DATABASE_URL / REDIS_HOST, so #
+    # we point them at these services (reachable on localhost from the   #
+    # job runner via the published ports below).                         #
+    # ------------------------------------------------------------------ #
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kairon
+          POSTGRES_PASSWORD: kairon
+          POSTGRES_DB: kairon_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kairon -d kairon_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Point the test suite at the Postgres service container instead of
+      # spinning up a testcontainer. asyncpg driver to match SQLAlchemy async.
+      TEST_DATABASE_URL: postgresql+asyncpg://kairon:kairon@localhost:5432/kairon_test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kairon
+      POSTGRES_PASSWORD: kairon
+      POSTGRES_DB: kairon_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      # Keep empty on purpose: /v1/explain must degrade gracefully to a static
+      # template when no key is present, and tests assert that behaviour.
+      ANTHROPIC_API_KEY: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==1.8.4
+
+      # Keep the Poetry-managed virtualenv inside the project so the cache
+      # key is stable and the path is predictable.
+      - name: Configure Poetry (in-project venv)
+        run: poetry config virtualenvs.in-project true
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: poetry install --with dev,ui
+
+      # -------------------- Static checks -------------------- #
+      - name: Ruff lint
+        run: poetry run ruff check .
+
+      - name: Ruff format check
+        run: poetry run ruff format --check .
+
+      - name: mypy
+        run: poetry run mypy src tests
+
+      # -------------------- Tests -------------------- #
+      - name: Pytest (with coverage gate)
+        # pyproject only emits a term-missing report; add cobertura XML here so
+        # the upload step below has a file to archive.
+        run: poetry run pytest --cov-report=xml
+
+      - name: Upload coverage report
+        if: always() # keep the artifact even when tests fail, for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn

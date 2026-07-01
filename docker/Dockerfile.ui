@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+# ---------------------------------------------------------------------------
+# UI Streamlit — deploy separado da API. Só precisa do grupo `ui` de deps.
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+
+ENV POETRY_VERSION=1.8.4 \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+WORKDIR /app
+COPY pyproject.toml poetry.lock* ./
+# UI só precisa das deps do grupo ui (streamlit, altair, requests).
+RUN poetry install --only ui --no-root
+
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 kairon
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+COPY ui ./ui
+
+USER kairon
+EXPOSE 8501
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=5 \
+    CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "ui/app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0", \
+     "--server.headless=true", "--browser.gatherUsageStats=false"]

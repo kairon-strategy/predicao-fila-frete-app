@@ -1,0 +1,28 @@
+# =============================================================================
+# Kairon Frete — example Terraform variables
+# -----------------------------------------------------------------------------
+# Copy this file to `terraform.tfvars` and fill in real values:
+#
+#     cp terraform.tfvars.example terraform.tfvars
+#
+# `terraform.tfvars` is gitignored (only *.tfvars.example is committed).
+# NEVER commit real tokens. You can also export any of these as TF_VAR_<name>
+# environment variables instead of putting them in the file.
+# =============================================================================
+
+# ---- Render ----
+render_api_key = "rnd_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# ---- Supabase ----
+supabase_access_token = "sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+supabase_org_id       = "your-supabase-org-slug"
+supabase_db_password  = "change-me-strong-password"
+
+# ---- Backblaze B2 ----
+backblaze_key_id          = "0000000000000000000000000"
+backblaze_application_key = "K000xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# ---- Common (defaults shown; override if needed) ----
+region         = "us-east"
+project_name   = "kairon-frete"
+docker_hub_org = "kaironstrategy"

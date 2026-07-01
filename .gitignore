@@ -1,0 +1,63 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+
+# ---- Virtualenv / Poetry ----
+.venv/
+venv/
+# poetry.lock IS committed (reproducible builds); apenas o cache local é ignorado
+.cache/
+
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Testes / cobertura ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ---- Type checker ----
+.mypy_cache/
+.ruff_cache/
+
+# ---- Dados ----
+# dados sintéticos SÃO comitados (data/synthetic/), dados brutos/reais NUNCA.
+data/raw/
+data/eurochem/
+*.xlsx
+*.xls
+!data/synthetic/**
+# ...exceto a série diária gerada em runtime pelo seed (grande, regenerável).
+data/synthetic/routes_daily_prices.csv
+
+# ---- Modelos treinados (artefatos grandes; regeráveis) ----
+*.pkl
+*.joblib
+*.txt.model
+models_store/
+
+# ---- IaC ----
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfvars
+!infra/terraform/*.tfvars.example
+infra/terraform/.terraform.lock.hcl
+
+# ---- IDE / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ---- Prefect ----
+.prefect/

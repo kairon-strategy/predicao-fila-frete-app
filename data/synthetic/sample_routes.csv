@@ -1,0 +1,21 @@
+origem,destino,distancia_km,produto,corredor,piso_antt_r_per_ton
+Rondonópolis-MT,Sinop-MT,480.0,ureia,MT-Norte,113.2
+Rondonópolis-MT,Sorriso-MT,520.0,MAP,MT-Norte,116.8
+Rondonópolis-MT,Santos-SP,1500.0,KCl,MT-Santos,205.0
+Rondonópolis-MT,Paranaguá-PR,1650.0,NPK,MT-Paranagua,218.5
+Cuiabá-MT,Sinop-MT,500.0,ureia,MT-Norte,115.0
+Cuiabá-MT,Sorriso-MT,420.0,MAP,MT-Norte,107.8
+Cuiabá-MT,Rondonópolis-MT,220.0,KCl,MT-Sul,89.8
+Sorriso-MT,Sinop-MT,90.0,NPK,MT-Norte,78.1
+Sorriso-MT,Lucas do Rio Verde-MT,55.0,ureia,MT-Norte,74.95
+Sinop-MT,Santos-SP,1950.0,KCl,MT-Santos,245.5
+Nova Mutum-MT,Cuiabá-MT,250.0,ureia,MT-Sul,92.5
+Primavera do Leste-MT,Rondonópolis-MT,150.0,MAP,MT-Sul,83.5
+Luís Eduardo Magalhães-BA,Salvador-BA,900.0,ureia,BA-Oeste,151.0
+Luís Eduardo Magalhães-BA,Barreiras-BA,90.0,MAP,BA-Oeste,78.1
+Barreiras-BA,Salvador-BA,850.0,KCl,BA-Oeste,146.5
+Rio Verde-GO,Goiânia-GO,220.0,ureia,GO-Sul,89.8
+Jataí-GO,Rio Verde-GO,110.0,MAP,GO-Sul,79.9
+Uberlândia-MG,Santos-SP,800.0,KCl,MG-Santos,142.0
+Sapezal-MT,Rondonópolis-MT,650.0,algodão,MT-Oeste,128.5
+São Desidério-BA,Salvador-BA,880.0,algodão,BA-Oeste,149.2

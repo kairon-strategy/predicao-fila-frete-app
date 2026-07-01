@@ -1,0 +1,118 @@
+[tool.poetry]
+name = "kairon-frete"
+version = "0.1.0"
+description = "Kairon Frete — SaaS de predição de frete rodoviário (agro) — MVP"
+authors = ["Eduardo Vasconcellos <zedu@kaironstrategy.com>"]
+readme = "README.md"
+license = "Proprietary"
+packages = [{ include = "kairon", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "~3.12"
+fastapi = "~0.115"
+uvicorn = { extras = ["standard"], version = "~0.32" }
+pydantic = "~2.9"
+pydantic-settings = "~2.6"
+sqlalchemy = { extras = ["asyncio"], version = "~2.0" }
+greenlet = "~3.1"  # requerido pelo SQLAlchemy async; marker de plataforma não o instala sozinho
+asyncpg = "~0.30"
+alembic = "~1.14"
+lightgbm = "~4.5"
+scikit-learn = "~1.5"
+numpy = "~2.1"
+pandas = "~2.2"
+shap = "~0.46"
+httpx = "~0.28"
+tenacity = "~9.0"
+structlog = "~24.4"
+prometheus-client = "~0.21"
+sentry-sdk = { extras = ["fastapi"], version = "~2.19" }
+anthropic = "~0.40"
+instructor = "~1.7"
+pgvector = "~0.3"
+jinja2 = "~3.1"
+python-jose = { extras = ["cryptography"], version = "~3.3" }
+bcrypt = "~4.2"
+
+[tool.poetry.group.ui.dependencies]
+streamlit = "~1.40"
+altair = "~5.5"
+requests = "~2.32"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "~8.3"
+pytest-asyncio = "~0.24"
+pytest-cov = "~6.0"
+respx = "~0.21"
+testcontainers = { extras = ["postgres", "redis"], version = "~4.9" }
+ruff = "~0.8"
+mypy = "~1.13"
+pre-commit = "~4.0"
+types-requests = "~2.32"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# ---------------------------------------------------------------------------
+# Ruff — linter + formatter (substitui black + isort + flake8)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests", "ui", "scripts"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, UP pyupgrade, B bugbear,
+# ASYNC flake8-async (pega time.sleep em async), T20 flake8-print (proíbe print)
+select = ["E", "W", "F", "I", "UP", "B", "ASYNC", "T20", "C4", "SIM"]
+ignore = ["E501"] # line-length é tratado pelo formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["T20"]           # prints em teste são OK
+"scripts/**" = ["T20"]         # scripts de seed podem imprimir
+"ui/**" = ["T20"]              # streamlit usa st.write, mas libera print de debug local
+
+[tool.ruff.lint.isort]
+known-first-party = ["kairon"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI usa Depends()/Header()/etc como default de argumento — idiom, não bug.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+]
+
+# ---------------------------------------------------------------------------
+# mypy — typecheck
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+ignore_missing_imports = true          # libs de ML nem sempre têm stubs
+disallow_untyped_decorators = false    # FastAPI/prefect decorators
+disallow_any_generics = false          # exigir np.ndarray[Any,Any] em código ML é ruído
+warn_return_any = false
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["lightgbm.*", "shap.*", "sklearn.*"]
+ignore_errors = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["src", "tests"]
+python_files = ["test_*.py"]
+addopts = "-q --cov=kairon --cov-report=term-missing --cov-fail-under=70"
+
+[tool.coverage.run]
+source = ["src/kairon"]
+omit = ["*/tests/*", "*/__init__.py"]

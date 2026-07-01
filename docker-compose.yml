@@ -1,0 +1,89 @@
+# =============================================================================
+# Kairon Frete — stack de desenvolvimento local.
+# `make docker-up` sobe tudo. Alvo: healthy em < 60s.
+# MVP: sem Redis (não havia consumidor) e sem orquestrador (ETL ANP é cron/script).
+# =============================================================================
+name: kairon-frete
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kairon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-kairon}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kairon} -d ${POSTGRES_DB:-kairon}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [kairon]
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    ports:
+      - "8000:8000"
+    # Aplica migrations e sobe a API. Dev-friendly: docker-up já deixa o schema pronto.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn kairon.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 25s
+    networks: [kairon]
+
+  # ETL ANP: agendador simples (roda o script e dorme 1 semana). Sem Prefect no MVP.
+  # Em produção, prefira um Cron Job do provedor apontando p/ o mesmo comando.
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    command: >
+      sh -c "while true; do
+               python -m kairon.ingestion.flows.anp_flow || true;
+               sleep 604800;
+             done"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [kairon]
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    env_file: .env
+    environment:
+      # Dentro da rede docker a UI fala com "api"; no browser o usuário usa localhost.
+      KAIRON_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [kairon]
+
+volumes:
+  pgdata:
+
+networks:
+  kairon:
+    driver: bridge
