@@ -48,6 +48,29 @@ async def _diesel_for(session: AsyncSession, origem: str) -> float:
     return diesel if diesel is not None else DEFAULT_DIESEL_PRICE_BRL_PER_L
 
 
+async def _latest_diesel_by_uf(session: AsyncSession) -> dict[str, float]:
+    """Preço de diesel mais recente por UF em UMA query (evita N+1 no ranking).
+
+    O ranking avalia dezenas de rotas; buscar o diesel por rota gera uma query
+    remota por rota. Aqui trazemos tudo ordenado por data e ficamos com o mais
+    recente de cada UF — um único round-trip.
+    """
+    from kairon.ingestion.anp.models import RawDieselPrice
+
+    rows = (
+        await session.execute(
+            select(RawDieselPrice.uf, RawDieselPrice.preco_medio).order_by(
+                RawDieselPrice.data.desc()
+            )
+        )
+    ).all()
+    latest: dict[str, float] = {}
+    for uf, preco in rows:
+        if uf not in latest:  # primeira ocorrência = data mais recente (order by desc)
+            latest[uf] = preco
+    return latest
+
+
 def _piso(route: Route) -> float:
     return (
         route.piso_antt_r_per_ton
@@ -73,10 +96,14 @@ async def rank_routes(
     residual_model, quantile_model = _load_models()
     today = datetime.now().date()
     d30 = today - timedelta(days=30)
+    # Pré-busca o diesel de todas as UFs numa query só (evita N+1 no loop).
+    diesel_by_uf = await _latest_diesel_by_uf(session)
 
     items: list[RouteRankingItem] = []
     for route in routes:
-        diesel = await _diesel_for(session, route.origem)
+        uf = _parse_uf(route.origem)
+        diesel = diesel_by_uf.get(uf) if uf else None
+        diesel = diesel if diesel is not None else DEFAULT_DIESEL_PRICE_BRL_PER_L
         piso = _piso(route)
         fv_now = build_features(
             distancia_km=route.distancia_km,
