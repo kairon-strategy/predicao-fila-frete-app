@@ -116,7 +116,7 @@ export default function ConsultaPage() {
     <div>
       <PageHeader
         title="Nova consulta"
-        subtitle="Cotação instantânea · baseline + LightGBM + banda + SHAP"
+        subtitle="Cotação instantânea de frete"
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -373,17 +373,17 @@ function ResultView({
         </CardContent>
       </Card>
 
-      {/* DRIVERS (SHAP) */}
+      {/* PRINCIPAIS FATORES */}
       <Card className="shadow-premium">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-serif text-lg">
             <Sparkles className="size-4 text-gold" />
-            Drivers (SHAP)
+            Principais fatores
           </CardTitle>
         </CardHeader>
         <CardContent>
           {drivers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sem drivers disponíveis.</p>
+            <p className="text-sm text-muted-foreground">Sem fatores disponíveis.</p>
           ) : (
             <div className="space-y-4">
               {drivers.map((d) => {

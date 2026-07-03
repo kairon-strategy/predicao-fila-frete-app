@@ -143,6 +143,26 @@ def _disable_claude(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cc, "_client", _DisabledClient(), raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _enable_open_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Testes criam tenants isolados via /register; habilita o cadastro aberto.
+
+    Produção é invite-only (settings.allow_open_registration=False). O teste do
+    gate 403 sobrescreve isto localmente com monkeypatch.
+    """
+    from kairon.core.config import settings
+
+    monkeypatch.setattr(settings, "allow_open_registration", True, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_login_ratelimit() -> None:
+    """Zera o rate limiter de login (estado global do processo) entre testes."""
+    from kairon.tenant import ratelimit
+
+    ratelimit._attempts.clear()
+
+
 @pytest_asyncio.fixture
 async def app(engine: AsyncEngine) -> AsyncIterator[FastAPI]:
     """FastAPI app with get_session overridden to use the test engine."""

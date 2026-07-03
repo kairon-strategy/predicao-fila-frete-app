@@ -17,9 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -33,31 +31,6 @@ const TITLES: Record<string, string> = {
   "/rotas": "Rotas & corredores",
   "/configuracoes": "Configurações",
 };
-
-function HealthDot() {
-  const [ok, setOk] = useState<boolean | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api
-      .health()
-      .then(() => alive && setOk(true))
-      .catch(() => alive && setOk(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-      <span
-        className={cn(
-          "size-2 rounded-full",
-          ok === null ? "bg-muted-foreground" : ok ? "bg-success" : "bg-destructive",
-        )}
-      />
-      API {ok === null ? "…" : ok ? "online" : "offline"}
-    </div>
-  );
-}
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -120,7 +93,6 @@ export function Topbar() {
 
       <div className="flex items-center gap-3">
         <ThemeToggle />
-        <HealthDot />
         {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

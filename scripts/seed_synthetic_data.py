@@ -317,10 +317,11 @@ async def main() -> None:
         await session.flush()
 
         # --- usuários demo (idempotente por email) ---
+        # Nomes neutros por papel (contas demo não são pessoas reais).
         demo_users = [
-            ("admin@kairon.dev", "admin", "Eduardo Vasconcellos"),
-            ("analyst@kairon.dev", "analyst", "Ana Souza"),
-            ("viewer@kairon.dev", "viewer", "Vitor Lima"),
+            ("admin@kairon.dev", "admin", "Admin"),
+            ("analyst@kairon.dev", "analyst", "Analista"),
+            ("viewer@kairon.dev", "viewer", "Visualizador"),
         ]
         for email, role, uname in demo_users:
             exists = (

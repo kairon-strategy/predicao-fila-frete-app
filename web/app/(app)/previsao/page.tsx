@@ -10,7 +10,6 @@ import {
   ArrowDownRight,
   Minus,
   Route as RouteIcon,
-  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,7 +19,6 @@ import { FreightAreaChart } from "@/components/charts/freight-area-chart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -267,10 +265,6 @@ export default function PrevisaoPage() {
                   </p>
                 )}
               </div>
-              <Badge variant="outline" className="gap-1 text-muted-foreground">
-                <Info className="size-3.5 text-gold" />
-                série implícita pelo modelo
-              </Badge>
             </div>
 
             {chartLoading ? (
@@ -283,14 +277,6 @@ export default function PrevisaoPage() {
               <FreightAreaChart data={chartData} height={320} />
             )}
 
-            {history?.note && !chartLoading && (
-              <>
-                <Separator className="opacity-40" />
-                <p className="text-xs italic text-muted-foreground">
-                  {history.note}
-                </p>
-              </>
-            )}
           </Card>
 
           {/* Monthly table */}

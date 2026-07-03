@@ -667,7 +667,7 @@ export default function PredicaoPage() {
                 <TabsList className="w-full">
                   <TabsTrigger value="previsao">Previsão 12 meses</TabsTrigger>
                   <TabsTrigger value="ranking">Ranking de rotas</TabsTrigger>
-                  <TabsTrigger value="drivers">Drivers de preço</TabsTrigger>
+                  <TabsTrigger value="drivers">Fatores de preço</TabsTrigger>
                 </TabsList>
 
                 {/* -------------------- Previsão 12 meses -------------------- */}
@@ -750,7 +750,6 @@ export default function PredicaoPage() {
                       <p className="mt-2 text-xs italic text-muted-foreground">
                         Linha tracejada = média histórica de referência ({num(previsaoMean, 3)}{" "}
                         R$/km).
-                        {history.note ? ` ${history.note}` : ""}
                       </p>
                     </motion.div>
                   )}
@@ -835,7 +834,7 @@ export default function PredicaoPage() {
                     </div>
                   ) : predict.drivers.length === 0 ? (
                     <p className="py-16 text-center text-sm text-muted-foreground">
-                      Sem drivers retornados pelo modelo.
+                      Sem fatores disponíveis.
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

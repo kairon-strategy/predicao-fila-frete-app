@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+# Papéis válidos de RBAC. Validado na borda (schema) e no service.
+Role = Literal["admin", "analyst", "viewer"]
 
 
 class LoginRequest(BaseModel):
@@ -29,15 +34,16 @@ class CreateUserRequest(BaseModel):
 
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=8, max_length=200)
-    role: str = Field(default="viewer")
+    role: Role = Field(default="viewer")
     name: str | None = Field(default=None, max_length=120)
 
 
 class UpdateUserRequest(BaseModel):
-    """Admin edita papel/ativação de um usuário do tenant."""
+    """Admin edita papel/ativação e/ou reseta a senha de um usuário do tenant."""
 
-    role: str | None = Field(default=None)
+    role: Role | None = Field(default=None)
     is_active: bool | None = Field(default=None)
+    password: str | None = Field(default=None, min_length=8, max_length=200)
 
 
 class UpdateMeRequest(BaseModel):

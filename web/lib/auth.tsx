@@ -54,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // revoga a sessão no servidor (best-effort); não bloqueia o logout local
+    void api.logout().catch(() => {});
     clearTokens();
     setUser(null);
   }, []);

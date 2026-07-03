@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kairon.core.config import settings
 from kairon.core.database import get_session
 from kairon.core.exceptions import NotFoundError
-from kairon.tenant import service
+from kairon.tenant import ratelimit, service
 from kairon.tenant.auth import Principal, get_principal, require_role
 from kairon.tenant.models import User
 from kairon.tenant.schemas import (
@@ -33,9 +34,32 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _admin_guard = require_role("admin")
 
 
+def _client_ip(request: Request) -> str:
+    """IP do cliente, respeitando X-Forwarded-For (atrás de proxy/load balancer)."""
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/login", response_model=TokenResponse, summary="Login (email/senha) -> JWT")
-async def login(req: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
-    return await service.login(session, req.email, req.password)
+async def login(
+    req: LoginRequest, request: Request, session: AsyncSession = Depends(get_session)
+) -> TokenResponse:
+    # Rate limit anti brute-force (por IP+email). Estourou -> 429.
+    key = f"{_client_ip(request)}:{req.email.strip().lower()}"
+    if not ratelimit.hit(
+        key,
+        max_attempts=settings.login_max_attempts,
+        window_seconds=settings.login_window_min * 60,
+    ):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "muitas tentativas de login; tente novamente em alguns minutos",
+        )
+    tokens = await service.login(session, req.email, req.password)
+    ratelimit.reset(key)  # login OK zera o contador
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse, summary="Renova access token")
@@ -49,7 +73,23 @@ async def refresh(
 async def register(
     req: RegisterRequest, session: AsyncSession = Depends(get_session)
 ) -> TokenResponse:
+    # Por convite: cadastro aberto de novos tenants é desligado por padrão.
+    if not settings.allow_open_registration:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "cadastro por convite: peça a um admin para criar seu acesso",
+        )
     return await service.register(session, req.tenant_name, req.email, req.password, req.name)
+
+
+@router.post("/logout", status_code=204, summary="Encerra a sessão (revoga tokens)")
+async def logout(
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_principal),
+) -> Response:
+    if principal.user_id is not None:
+        await service.logout(session, principal.user_id)
+    return Response(status_code=204)
 
 
 # ---- Usuários (CRUD, admin) ----
@@ -87,7 +127,12 @@ async def update_user(
     principal: Principal = Depends(_admin_guard),
 ) -> UserResponse:
     return await service.update_user(
-        session, principal.tenant_id, user_id, role=req.role, is_active=req.is_active
+        session,
+        principal.tenant_id,
+        user_id,
+        role=req.role,
+        is_active=req.is_active,
+        password=req.password,
     )
 
 

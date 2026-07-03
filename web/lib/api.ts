@@ -257,8 +257,10 @@ export const api = {
       method: "POST",
       body: { email, password, role, name: name ?? null },
     }),
-  updateUser: (id: string, patch: { role?: string; is_active?: boolean }) =>
+  updateUser: (id: string, patch: { role?: string; is_active?: boolean; password?: string }) =>
     request<UserResponse>(`/v1/auth/users/${id}`, { method: "PATCH", body: patch }),
+  // encerra a sessão no servidor (revoga tokens via token_version)
+  logout: () => request<void>("/v1/auth/logout", { method: "POST" }),
 
   // perfil próprio
   updateMe: (patch: { name?: string; password?: string }) =>

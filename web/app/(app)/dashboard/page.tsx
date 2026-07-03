@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader title={<>Olá, <span className="text-gradient-gold">{nome || "bem-vindo"}</span>.</>} subtitle="Visão geral da operação · dados sintéticos de desenvolvimento">
+      <PageHeader title={<>Olá, <span className="text-gradient-gold">{nome || "bem-vindo"}</span>.</>} subtitle="Visão geral da operação">
         <Button asChild>
           <Link href="/consulta">Nova consulta <ArrowRight className="size-4" /></Link>
         </Button>
@@ -102,7 +102,6 @@ export default function DashboardPage() {
           ) : (
             <Skeleton className="h-[280px] w-full" />
           )}
-          <p className="mt-3 text-xs text-muted-foreground">{history?.note}</p>
         </Card>
 
         {/* Recent alerts */}

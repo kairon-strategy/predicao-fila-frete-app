@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 7
+    # Registro: por convite (admin cria usuários). Cadastro aberto de novos
+    # tenants fica desligado por padrão — ligue só para trials self-serve.
+    allow_open_registration: bool = False
+    # Rate limit no login (anti brute-force): X tentativas por janela (min) por IP+email.
+    login_max_attempts: int = 5
+    login_window_min: int = 15
 
     # ---- Supabase ----
     supabase_url: str = ""

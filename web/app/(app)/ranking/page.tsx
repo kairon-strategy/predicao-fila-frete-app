@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import useSWR from "swr";
 
@@ -268,9 +268,6 @@ function RouteHistoryDialog({
               }))}
               height={240}
             />
-            <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-              <ArrowUpRight className="size-3" /> {history.note}
-            </p>
           </>
         )}
       </DialogContent>

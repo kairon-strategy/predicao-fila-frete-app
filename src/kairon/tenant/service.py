@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kairon.audit import writer as audit
 from kairon.core.exceptions import KaironError, NotFoundError, ValidationError
 from kairon.core.logging import get_logger
 from kairon.tenant import security
@@ -40,11 +41,22 @@ async def login(session: AsyncSession, email: str, password: str) -> TokenRespon
         or not user.is_active
         or not security.verify_password(password, user.hashed_password)
     ):
+        # Nota: audit de falha seria revertido no rollback da request; o log
+        # estruturado abaixo é a trilha de tentativas inválidas.
         log.warning("auth.login_failed", email_hash=hash(email))
         raise AuthError("credenciais inválidas")
 
     log.info("auth.login_ok", user_id=str(user.id), tenant_id=str(user.tenant_id))
-    return _issue_tokens(user_id=user.id, tenant_id=user.tenant_id, role=user.role)
+    await audit.write_event(
+        session,
+        event_type="auth.login",
+        entity_id=str(user.id),
+        payload={"role": user.role},
+        tenant_id=user.tenant_id,
+    )
+    return _issue_tokens(
+        user_id=user.id, tenant_id=user.tenant_id, role=user.role, token_version=user.token_version
+    )
 
 
 async def refresh(session: AsyncSession, refresh_token: str) -> TokenResponse:
@@ -59,15 +71,24 @@ async def refresh(session: AsyncSession, refresh_token: str) -> TokenResponse:
     user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
     if user is None or not user.is_active:
         raise AuthError("usuário inativo ou inexistente")
+    # Revogação: refresh só vale se a versão de sessão bater (logout / troca de senha).
+    if payload.get("tv") != user.token_version:
+        raise AuthError("sessão revogada; faça login novamente")
 
-    return _issue_tokens(user_id=user.id, tenant_id=user.tenant_id, role=user.role)
+    return _issue_tokens(
+        user_id=user.id, tenant_id=user.tenant_id, role=user.role, token_version=user.token_version
+    )
 
 
-def _issue_tokens(*, user_id: uuid.UUID, tenant_id: uuid.UUID, role: str) -> TokenResponse:
+def _issue_tokens(
+    *, user_id: uuid.UUID, tenant_id: uuid.UUID, role: str, token_version: int
+) -> TokenResponse:
     return TokenResponse(
-        access_token=security.create_access_token(user_id=user_id, tenant_id=tenant_id, role=role),
+        access_token=security.create_access_token(
+            user_id=user_id, tenant_id=tenant_id, role=role, token_version=token_version
+        ),
         refresh_token=security.create_refresh_token(
-            user_id=user_id, tenant_id=tenant_id, role=role
+            user_id=user_id, tenant_id=tenant_id, role=role, token_version=token_version
         ),
     )
 
@@ -115,7 +136,16 @@ async def register(
     session.add(user)
     await session.flush()
     log.info("auth.registered", tenant_id=str(tenant.id), user_id=str(user.id))
-    return _issue_tokens(user_id=user.id, tenant_id=tenant.id, role="admin")
+    await audit.write_event(
+        session,
+        event_type="auth.registered",
+        entity_id=str(user.id),
+        payload={"tenant": tenant.name},
+        tenant_id=tenant.id,
+    )
+    return _issue_tokens(
+        user_id=user.id, tenant_id=tenant.id, role="admin", token_version=user.token_version
+    )
 
 
 async def create_user(
@@ -143,6 +173,13 @@ async def create_user(
     session.add(user)
     await session.flush()
     log.info("auth.user_created", tenant_id=str(tenant_id), user_id=str(user.id), role=role)
+    await audit.write_event(
+        session,
+        event_type="auth.user_created",
+        entity_id=str(user.id),
+        payload={"role": role, "email": email},
+        tenant_id=tenant_id,
+    )
     return _to_user_response(user)
 
 
@@ -160,8 +197,13 @@ async def update_user(
     *,
     role: str | None = None,
     is_active: bool | None = None,
+    password: str | None = None,
 ) -> UserResponse:
-    """Admin edita papel/ativação de um usuário do PRÓPRIO tenant."""
+    """Admin edita papel/ativação e/ou reseta a senha de um usuário do PRÓPRIO tenant.
+
+    Reset de senha e desativação revogam as sessões do alvo (bump token_version):
+    a senha nova/o bloqueio passam a valer imediatamente na renovação.
+    """
     user = (
         (await session.execute(select(User).where(User.id == user_id, User.tenant_id == tenant_id)))
         .scalars()
@@ -169,14 +211,29 @@ async def update_user(
     )
     if user is None:
         raise NotFoundError("usuário não encontrado")
+    revoke = False
     if role is not None:
         if role not in ROLES:
             raise ValidationError(f"papel inválido: {role} (use {', '.join(ROLES)})")
         user.role = role
     if is_active is not None:
         user.is_active = is_active
+        if not is_active:
+            revoke = True
+    if password is not None:
+        user.hashed_password = security.hash_password(password)
+        revoke = True
+    if revoke:
+        user.token_version += 1
     await session.flush()
     log.info("auth.user_updated", tenant_id=str(tenant_id), user_id=str(user_id))
+    await audit.write_event(
+        session,
+        event_type="auth.password_reset" if password is not None else "auth.user_updated",
+        entity_id=str(user_id),
+        payload={"role": role, "is_active": is_active, "password_reset": password is not None},
+        tenant_id=tenant_id,
+    )
     return _to_user_response(user)
 
 
@@ -187,7 +244,11 @@ async def update_me(
     name: str | None = None,
     password: str | None = None,
 ) -> UserResponse:
-    """Usuário edita o próprio perfil (nome e/ou senha)."""
+    """Usuário edita o próprio perfil (nome e/ou senha).
+
+    Trocar a senha revoga as demais sessões (bump token_version). O token atual
+    do próprio usuário segue válido até expirar; o refresh exigirá novo login.
+    """
     user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
     if user is None:
         raise NotFoundError("usuário não encontrado")
@@ -195,9 +256,39 @@ async def update_me(
         user.name = name.strip() or None
     if password is not None:
         user.hashed_password = security.hash_password(password)
+        user.token_version += 1
     await session.flush()
     log.info("auth.me_updated", user_id=str(user_id))
+    if password is not None:
+        await audit.write_event(
+            session,
+            event_type="auth.password_changed",
+            entity_id=str(user_id),
+            payload={},
+            tenant_id=user.tenant_id,
+        )
     return _to_user_response(user)
+
+
+async def logout(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Revoga as sessões do usuário (bump token_version).
+
+    O refresh token para de funcionar imediatamente; o access token atual expira
+    em <= access_token_ttl_min. Stateless no caminho de request (sem denylist).
+    """
+    user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
+    if user is None:
+        raise NotFoundError("usuário não encontrado")
+    user.token_version += 1
+    await session.flush()
+    log.info("auth.logout", user_id=str(user_id))
+    await audit.write_event(
+        session,
+        event_type="auth.logout",
+        entity_id=str(user_id),
+        payload={},
+        tenant_id=user.tenant_id,
+    )
 
 
 async def get_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> TenantResponse:

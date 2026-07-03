@@ -215,10 +215,6 @@ export default function SimulacaoPage() {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-
-                  {result.note && (
-                    <p className="mt-3 text-xs text-muted-foreground">{result.note}</p>
-                  )}
                 </Card>
               </motion.div>
             ) : (

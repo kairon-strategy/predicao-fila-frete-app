@@ -394,7 +394,7 @@ export default function CopilotoPage() {
       {prediction && prediction.drivers.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-gold">
-            Principais drivers
+            Principais fatores
           </span>
           {prediction.drivers.slice(0, 5).map((d) => (
             <span

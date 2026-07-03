@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -95,10 +94,7 @@ export default function LoginPage() {
         </Button>
 
         <div className="mt-6 border-t border-border pt-5 text-center text-xs text-muted-foreground">
-          Não tem conta?{" "}
-          <Link href="/register" className="font-medium text-gold hover:underline">
-            Criar conta
-          </Link>
+          Acesso por convite · fale com o administrador da sua empresa
           <div className="mt-2 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/70">
             demo: admin@kairon.dev · demo1234
           </div>

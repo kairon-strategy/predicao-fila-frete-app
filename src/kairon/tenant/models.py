@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func, true
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kairon.core.database import Base
@@ -33,4 +33,6 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), server_default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=true())
+    # Versão de sessão: bump invalida todos os tokens (logout / troca de senha).
+    token_version: Mapped[int] = mapped_column(Integer, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

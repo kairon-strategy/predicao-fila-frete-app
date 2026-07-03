@@ -414,7 +414,28 @@ function NovoUsuarioDialog() {
 function UserRow({ u, currentUserId }: { u: UserResponse; currentUserId?: string }) {
   const [busyRole, setBusyRole] = useState(false);
   const [busyActive, setBusyActive] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [busyReset, setBusyReset] = useState(false);
   const isSelf = u.id === currentUserId;
+
+  async function resetSenha() {
+    if (novaSenha.length < 8) {
+      toast.error("A nova senha deve ter ao menos 8 caracteres.");
+      return;
+    }
+    setBusyReset(true);
+    try {
+      await api.updateUser(u.id, { password: novaSenha });
+      toast.success("Senha redefinida. O usuário precisará entrar novamente.");
+      setResetOpen(false);
+      setNovaSenha("");
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao redefinir senha."));
+    } finally {
+      setBusyReset(false);
+    }
+  }
 
   async function changeRole(role: string) {
     if (role === u.role) return;
@@ -473,20 +494,54 @@ function UserRow({ u, currentUserId }: { u: UserResponse; currentUserId?: string
         )}
       </TableCell>
       <TableCell className="text-right">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={toggleActive}
-          disabled={busyActive || isSelf}
-        >
-          {busyActive ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : u.is_active ? (
-            "Desativar"
-          ) : (
-            "Ativar"
+        <div className="flex justify-end gap-2">
+          {!isSelf && (
+            <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="ghost">
+                  Resetar senha
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Redefinir senha de {u.email}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2">
+                  <Label htmlFor={`reset-${u.id}`}>Nova senha (mín. 8)</Label>
+                  <Input
+                    id={`reset-${u.id}`}
+                    type="password"
+                    value={novaSenha}
+                    onChange={(e) => setNovaSenha(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    As sessões atuais do usuário serão encerradas.
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button onClick={resetSenha} disabled={busyReset}>
+                    {busyReset ? <Loader2 className="size-4 animate-spin" /> : "Redefinir"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
-        </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleActive}
+            disabled={busyActive || isSelf}
+          >
+            {busyActive ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : u.is_active ? (
+              "Desativar"
+            ) : (
+              "Ativar"
+            )}
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );
