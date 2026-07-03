@@ -137,3 +137,5 @@ async def test_login_rate_limited_after_max_attempts(client: httpx.AsyncClient) 
         "/v1/auth/login", json={"email": "admin@rateco.com", "password": "errada00"}
     )
     assert blocked.status_code == 429, blocked.text
+    # RFC 6585: o cliente precisa saber quando pode voltar (header legível via CORS).
+    assert blocked.headers.get("retry-after") is not None

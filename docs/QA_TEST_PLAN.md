@@ -23,6 +23,7 @@
    make db-migrate
    poetry run python scripts/seed_synthetic_data.py     # 62 rotas, 3 users, diesel
    poetry run python scripts/seed_demo_alerts.py        # 2 alertas (spike diesel)
+   poetry run python scripts/seed_demo_users.py         # tenant B (isolamento) + confirma os 3 papéis
    make run-api                                          # :8000
    ```
 4. Front (cache limpo, evita o FCP alto por cache velho):
@@ -30,7 +31,9 @@
    cd web && rm -rf .next && npm install && npm run dev  # :3000
    ```
 5. Browser: **hard refresh (Cmd+Shift+R)**, cookies/localStorage limpos.
-6. Credenciais demo (dev): admin `admin@kairon.dev` · analyst `analyst@kairon.dev` · viewer `viewer@kairon.dev` — senha `demo1234`.
+6. Credenciais demo (dev):
+   - **Tenant A** (`Kairon Dev`): `admin@kairon.dev` · `analyst@kairon.dev` · `viewer@kairon.dev` — senha `demo1234`.
+   - **Tenant B** (`Empresa Beta`, para isolamento): `beta@empresa.com` — senha `beta1234`.
 
 **URLs:** App `http://localhost:3000` · API `http://localhost:8000` · Swagger `http://localhost:8000/docs`.
 
@@ -63,7 +66,7 @@ Rodáveis por `curl` direto — não dependem da UI.
 | B1 | P0 | Logar viewer → `POST /v1/routes` (criar rota) | **403** |
 | B2 | P1 | viewer → `GET /v1/routes` (ranking) | **200** (leitura liberada) |
 | B3 | P1 | Criar user com `role:"root"` (admin) | **422** (enum inválido) |
-| B4 | P1 | Token de outro tenant → `GET /v1/alerts` | **200** e lista **vazia** (isolamento) |
+| B4 | P1 | Logar `beta@empresa.com` (tenant B) → `GET /v1/alerts` e `GET /v1/routes` | **200**; alertas **vazios** (os 2 são do tenant A) e ranking só com a rota do tenant B (isolamento) |
 | B5 | P1 | Logout (`POST /v1/auth/logout`) e reusar o `refresh_token` antigo em `/refresh` | **401** (sessão revogada) |
 | B6 | P1 | Admin reseta senha de um user (`PATCH /v1/auth/users/{id}` com `password`) → user loga com a nova; refresh antigo dele | nova senha **200**; refresh antigo **401** |
 

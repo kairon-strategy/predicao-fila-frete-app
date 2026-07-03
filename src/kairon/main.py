@@ -69,6 +69,9 @@ def _register_cors(app: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Headers que o JS do browser pode LER (CORS esconde os demais). Retry-After
+        # no 429 do login precisa ser legível para o front mostrar "tente em X min".
+        expose_headers=["Retry-After"],
     )
 
 
