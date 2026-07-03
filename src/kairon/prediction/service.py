@@ -133,6 +133,8 @@ async def predict(
         target_date=request.data,
         diesel_price=diesel_price,
         piso_antt=piso_antt,
+        origem=request.origem,
+        destino=request.destino,
     )
     residual_model, quantile_model = _load_models()
 

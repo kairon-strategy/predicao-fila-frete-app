@@ -6,6 +6,7 @@ As MESMAS features alimentam baseline, LightGBM e SHAP — fonte única.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -42,6 +43,11 @@ class FeatureVector:
     seasonality: float
     month: int
     produto_is_fertilizante: int  # 1 fertilizante, 0 caso contrário (ex: algodão)
+    # Efeito de corredor/lane (backhaul, concorrência, qualidade da via). Multiplica
+    # o baseline. Fora do vetor do LightGBM (não faz parte de as_row) — é um ajuste
+    # de mercado por lane. No dev é sintético (derivado do par origem/destino); com
+    # dados reais, o efeito de lane passa a ser aprendido pelo modelo.
+    lane_factor: float = 1.0
 
     def as_row(self) -> list[float]:
         """Vetor ordenado para o modelo. NÃO reordene sem retreinar."""
@@ -72,6 +78,24 @@ class FeatureVector:
 _FERTILIZANTES = {"ureia", "map", "kcl", "cloreto", "npk", "fertilizante", "nitrato"}
 
 
+def lane_factor(origem: str | None, destino: str | None, produto: str, month: int) -> float:
+    """Fator de mercado por lane (backhaul/concorrência/via), estável por rota.
+
+    Determinístico a partir do par origem→destino+produto: uma base fixa por lane
+    (± ~11%) mais uma leve fase sazonal **própria de cada lane** — assim a variação
+    mês-a-mês difere entre rotas (do contrário todo o ranking teria o mesmo var_30d,
+    pois a sazonalidade global é idêntica). Sintético no dev; aprendido com dado real.
+    """
+    if not origem or not destino:
+        return 1.0
+    key = f"{origem}|{destino}|{produto}".strip().lower()
+    h = int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16)
+    base = 0.90 + (h % 1000) / 1000 * 0.22  # [0.90, 1.12)
+    phase = h % 12  # fase sazonal própria da lane
+    seasonal = 1.0 + 0.035 * math.sin(2 * math.pi * (month + phase) / 12.0)  # ±3,5%
+    return round(base * seasonal, 4)
+
+
 def build_features(
     *,
     distancia_km: float,
@@ -79,6 +103,8 @@ def build_features(
     target_date: date,
     diesel_price: float | None = None,
     piso_antt: float | None = None,
+    origem: str | None = None,
+    destino: str | None = None,
 ) -> FeatureVector:
     month = target_date.month
     return FeatureVector(
@@ -88,6 +114,7 @@ def build_features(
         seasonality=SEASONALITY.get(month, 1.0),
         month=month,
         produto_is_fertilizante=1 if produto.strip().lower() in _FERTILIZANTES else 0,
+        lane_factor=lane_factor(origem, destino, produto, month),
     )
 
 

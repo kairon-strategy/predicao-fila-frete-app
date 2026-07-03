@@ -98,9 +98,13 @@ export function Topbar() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
+                aria-label={`${user.email}, papel ${user.role}`}
                 className="gap-2 rounded-full border-border bg-card px-3"
               >
-                <span className="flex size-6 items-center justify-center rounded-full bg-gradient-to-br from-gold-2 to-[#7a6237] text-[11px] font-semibold text-[#0a0e1a]">
+                <span
+                  aria-hidden
+                  className="flex size-6 items-center justify-center rounded-full bg-gradient-to-br from-gold-2 to-[#7a6237] text-[11px] font-semibold text-[#0a0e1a]"
+                >
                   {user.email.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="hidden text-xs sm:inline">{user.email}</span>

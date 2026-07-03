@@ -58,7 +58,7 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Rotas monitoradas" value={loadingRoutes ? "…" : (routes?.length ?? 0)} hint="fertilizante + algodão" />
+        <KpiCard label="Rotas monitoradas" value={loadingRoutes ? "…" : (routes?.length ?? 0)} hint="fertilizante + algodão + grão" />
         <KpiCard label="Frete médio" value={loadingRoutes ? "…" : brl(avgFrete)} gold hint="por tonelada" />
         <KpiCard
           label="Alertas ativos"

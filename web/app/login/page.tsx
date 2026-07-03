@@ -10,11 +10,14 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+// Credenciais demo só aparecem/prefillam fora de produção (some no build de prod).
+const SHOW_DEMO = process.env.NODE_ENV !== "production";
+
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("admin@kairon.dev");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState(SHOW_DEMO ? "admin@kairon.dev" : "");
+  const [password, setPassword] = useState(SHOW_DEMO ? "demo1234" : "");
   const [loading, setLoading] = useState(false);
 
   async function doLogin(em: string, pw: string) {
@@ -58,12 +61,14 @@ export default function LoginPage() {
           Predição · benchmark · compliance para o agro brasileiro
         </p>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form method="post" onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
+              name="email"
               type="email"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"
@@ -73,7 +78,10 @@ export default function LoginPage() {
             <Label htmlFor="password">Senha</Label>
             <Input
               id="password"
+              name="password"
               type="password"
+              required
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -84,20 +92,24 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <Button
-          variant="outline"
-          disabled={loading}
-          onClick={() => doLogin("admin@kairon.dev", "demo1234")}
-          className="mt-3 w-full border-gold/40 text-gold hover:bg-gold/10"
-        >
-          Entrar como demo
-        </Button>
+        {SHOW_DEMO && (
+          <Button
+            variant="outline"
+            disabled={loading}
+            onClick={() => doLogin("admin@kairon.dev", "demo1234")}
+            className="mt-3 w-full border-gold/40 text-gold hover:bg-gold/10"
+          >
+            Entrar como demo
+          </Button>
+        )}
 
         <div className="mt-6 border-t border-border pt-5 text-center text-xs text-muted-foreground">
           Acesso por convite · fale com o administrador da sua empresa
-          <div className="mt-2 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/70">
-            demo: admin@kairon.dev · demo1234
-          </div>
+          {SHOW_DEMO && (
+            <div className="mt-2 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/70">
+              demo: admin@kairon.dev · demo1234
+            </div>
+          )}
         </div>
       </div>
     </div>

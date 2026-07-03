@@ -84,6 +84,8 @@ async def rank_routes(
             target_date=today,
             diesel_price=diesel,
             piso_antt=piso,
+            origem=route.origem,
+            destino=route.destino,
         )
         fv_30 = build_features(
             distancia_km=route.distancia_km,
@@ -91,6 +93,8 @@ async def rank_routes(
             target_date=d30,
             diesel_price=diesel,
             piso_antt=piso,
+            origem=route.origem,
+            destino=route.destino,
         )
         point, p10, p90 = _point_and_band(fv_now, residual_model, quantile_model)
         point_30, _, _ = _point_and_band(fv_30, residual_model, quantile_model)
@@ -151,6 +155,8 @@ async def route_history(
             target_date=month_start,
             diesel_price=diesel,
             piso_antt=piso,
+            origem=route.origem,
+            destino=route.destino,
         )
         point, p10, p90 = _point_and_band(fv, residual_model, quantile_model)
         points.append(

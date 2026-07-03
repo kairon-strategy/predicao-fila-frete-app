@@ -35,7 +35,8 @@ class BaselineResult:
 def predict_baseline(fv: FeatureVector) -> BaselineResult:
     fuel = fv.distancia_km * (CONSUMO_L_POR_KM / CAPACIDADE_TON) * fv.diesel_price
     operating = fv.distancia_km * CUSTO_OPERACIONAL_R_POR_TON_KM
-    subtotal = (fuel + operating) * fv.seasonality
+    # Sazonalidade global × efeito de corredor/lane (varia por rota).
+    subtotal = (fuel + operating) * fv.seasonality * fv.lane_factor
 
     piso_aplicado = subtotal < fv.piso_antt
     frete = max(subtotal, fv.piso_antt)
