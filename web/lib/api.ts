@@ -122,8 +122,39 @@ export type TokenResponse = {
   refresh_token: string;
   token_type: string;
 };
-export type Me = { user_id: string; tenant_id: string; email: string; role: string };
-export type UserResponse = { id: string; email: string; role: string; tenant_id: string };
+export type Me = {
+  user_id: string;
+  tenant_id: string;
+  email: string;
+  name: string | null;
+  role: string;
+};
+export type UserResponse = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  is_active: boolean;
+  tenant_id: string;
+};
+export type TenantResponse = { id: string; name: string; slug: string };
+export type RouteRecord = {
+  route_id: string;
+  origem: string;
+  destino: string;
+  produto: string;
+  distancia_km: number;
+  corredor: string | null;
+  piso_antt_r_per_ton: number | null;
+};
+export type RouteWrite = {
+  origem: string;
+  destino: string;
+  produto: string;
+  distancia_km: number;
+  corredor?: string | null;
+  piso_antt_r_per_ton?: number | null;
+};
 
 export type Driver = { feature: string; shap_value: number; direction: "up" | "down" };
 export type PredictRequest = {
@@ -219,11 +250,32 @@ export const api = {
       body: { tenant_name, email, password },
       auth: false,
     }),
-  createUser: (email: string, password: string, role: string) =>
+  // usuários (admin)
+  listUsers: () => request<UserResponse[]>("/v1/auth/users"),
+  createUser: (email: string, password: string, role: string, name?: string) =>
     request<UserResponse>("/v1/auth/users", {
       method: "POST",
-      body: { email, password, role },
+      body: { email, password, role, name: name ?? null },
     }),
+  updateUser: (id: string, patch: { role?: string; is_active?: boolean }) =>
+    request<UserResponse>(`/v1/auth/users/${id}`, { method: "PATCH", body: patch }),
+
+  // perfil próprio
+  updateMe: (patch: { name?: string; password?: string }) =>
+    request<UserResponse>("/v1/auth/me", { method: "PATCH", body: patch }),
+
+  // empresa (tenant)
+  getTenant: () => request<TenantResponse>("/v1/auth/tenant"),
+  updateTenant: (name: string) =>
+    request<TenantResponse>("/v1/auth/tenant", { method: "PATCH", body: { name } }),
+
+  // CRUD de rotas (gestão)
+  listRoutesManage: () => request<RouteRecord[]>("/v1/routes/manage"),
+  createRoute: (body: RouteWrite) =>
+    request<RouteRecord>("/v1/routes", { method: "POST", body }),
+  updateRoute: (id: string, body: RouteWrite) =>
+    request<RouteRecord>(`/v1/routes/${id}`, { method: "PUT", body }),
+  deleteRoute: (id: string) => request<void>(`/v1/routes/${id}`, { method: "DELETE" }),
 
   // prediction
   predict: (payload: PredictRequest) =>

@@ -29,7 +29,7 @@ const sevTone: Record<string, string> = {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const nome = firstNameFromEmail(user?.email);
+  const nome = user?.name ? user.name.split(" ")[0] : firstNameFromEmail(user?.email);
   const { data: routes, isLoading: loadingRoutes } = useSWR("routes", () => api.getRoutes());
   const { data: alerts } = useSWR("alerts-active", () => api.getAlerts());
 

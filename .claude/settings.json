@@ -70,7 +70,40 @@
       "Bash(echo \"author: $\\(git config user.name\\) <$\\(git config user.email\\)>\")",
       "Bash(git branch *)",
       "Bash(git add *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -T git@github.com)",
+      "Bash(git fetch *)",
+      "Bash(git ls-tree *)",
+      "Bash(git ls-remote *)",
+      "Bash(grep -E \"\\(^|/\\)\\\\.env$|\\\\.env\\\\.|secret|credential|\\\\.pem$|id_rsa\")",
+      "Read(//Users/renanviglioni/.cursor/**)",
+      "Bash(python3 -m json.tool .cursor/mcp.json)",
+      "Bash(python3 -m json.tool ~/.cursor/mcp.json)",
+      "Bash(python3 -c \"import json;print\\(', '.join\\(json.load\\(open\\('/Users/renanviglioni/.cursor/mcp.json'\\)\\)['mcpServers']\\)\\)\")",
+      "Bash(git check-ignore *)",
+      "Bash(supabase projects *)",
+      "Bash(brew install *)",
+      "Bash(github-mcp-server --help)",
+      "Bash(python3 -c 'import sys,json; *)",
+      "Bash(GITHUB_PERSONAL_ACCESS_TOKEN=ghp_faketokenfortest timeout 5 /opt/homebrew/bin/github-mcp-server stdio)",
+      "Bash(GITHUB_PERSONAL_ACCESS_TOKEN=ghp_faketokenfortest /opt/homebrew/bin/github-mcp-server stdio)",
+      "Bash(python3 -c \"import json;print\\(json.load\\(open\\('.cursor/mcp.json'\\)\\)['mcpServers']['github-kairon']['env']['GITHUB_PERSONAL_ACCESS_TOKEN']\\)\")",
+      "Bash(curl -s -o /dev/null -w 'GET /user -> %{http_code}\\\\n' -H 'Authorization: Bearer __TRACKED_VAR__' https://api.github.com/user)",
+      "Bash(curl -sI -H 'Authorization: Bearer __TRACKED_VAR__' https://api.github.com/user)",
+      "Bash(export POSTGRES_HOST=localhost POSTGRES_USER=kairon POSTGRES_PASSWORD=kairon POSTGRES_DB=kairon ANTHROPIC_API_KEY=\"\")",
+      "Bash(cd /Users/renanviglioni/Documents/ProjetosKaironStrategy/predicao-fila-frete-app *)",
+      "Bash(supabase --version)",
+      "Bash(psql --version)",
+      "Bash(sed -E 's/\\(:\\\\/\\\\/[^:]+:\\)[^@]+\\(@\\)/\\\\1****\\\\2/')",
+      "Bash(poetry run python -c ' *)",
+      "Bash(grep -E \"\\(^|/\\)\\\\.env$\")"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
     ]
   }
 }

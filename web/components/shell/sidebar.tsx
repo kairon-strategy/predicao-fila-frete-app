@@ -7,9 +7,11 @@ import {
   LayoutDashboard,
   LineChart,
   type LucideIcon,
+  Map,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
@@ -37,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/simulacao", label: "Simulação", icon: LineChart },
       { href: "/previsao", label: "Previsão 12 meses", icon: TrendingUp },
       { href: "/ranking", label: "Ranking de rotas", icon: LayoutDashboard },
+      { href: "/rotas", label: "Rotas & corredores", icon: Map },
     ],
   },
   {
@@ -45,6 +48,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/copiloto", label: "Copiloto Kairon", icon: Bot },
       { href: "/alertas", label: "Alertas", icon: Bell },
     ],
+  },
+  {
+    title: "Conta",
+    items: [{ href: "/configuracoes", label: "Configurações", icon: Settings }],
   },
   {
     title: "Compliance · v2",

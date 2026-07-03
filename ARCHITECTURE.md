@@ -17,6 +17,8 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 | 009 | Sem Retool, sem low-code, sem no-code. |
 | 010 | **IaC** (Terraform/Pulumi) e **CI/CD** obrigatórios desde o dia 1. |
 | 011 | Sem LangChain no MVP. Use o **SDK `anthropic` direto + Instructor + pgvector**. |
+| 012 | **Toda lógica de backend via API FastAPI. SEM Supabase Edge Functions.** O Supabase é usado só como **Postgres gerenciado (source-of-truth) + Auth/Storage** — nunca como camada de compute. Um único runtime/linguagem (Python) para lógica, regras, ML e integrações. |
+| 013 | **Engenharia limpa, sem anti-padrões.** Mantém o **monólito modular** (ADR-008) — **sem microserviços prematuros** (fragmentar cedo é over-engineering para um MVP de 1 engenheiro). Qualidade imposta por ruff + mypy strict + testes (≥70%) + fronteiras de contexto (zero import cruzado). Extração de serviços só na v2, quando houver escala/time real. |
 
 ## Diagrama em camadas (topo → base)
 

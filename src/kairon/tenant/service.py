@@ -7,12 +7,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kairon.core.exceptions import KaironError, ValidationError
+from kairon.core.exceptions import KaironError, NotFoundError, ValidationError
 from kairon.core.logging import get_logger
 from kairon.tenant import security
 from kairon.tenant.auth import ROLES
 from kairon.tenant.models import Tenant, User
-from kairon.tenant.schemas import TokenResponse, UserResponse
+from kairon.tenant.schemas import TenantResponse, TokenResponse, UserResponse
 
 log = get_logger(__name__)
 
@@ -78,8 +78,23 @@ def _slug(name: str) -> str:
     return f"{base or 'tenant'}-{uuid.uuid4().hex[:6]}"
 
 
+def _to_user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        is_active=user.is_active,
+        tenant_id=str(user.tenant_id),
+    )
+
+
 async def register(
-    session: AsyncSession, tenant_name: str, email: str, password: str
+    session: AsyncSession,
+    tenant_name: str,
+    email: str,
+    password: str,
+    name: str | None = None,
 ) -> TokenResponse:
     """Auto-onboarding: cria um tenant novo + primeiro usuário (admin) e loga."""
     email = email.strip().lower()
@@ -93,6 +108,7 @@ async def register(
     user = User(
         tenant_id=tenant.id,
         email=email,
+        name=name.strip() if name else None,
         hashed_password=security.hash_password(password),
         role="admin",
     )
@@ -103,7 +119,12 @@ async def register(
 
 
 async def create_user(
-    session: AsyncSession, tenant_id: uuid.UUID, email: str, password: str, role: str
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    email: str,
+    password: str,
+    role: str,
+    name: str | None = None,
 ) -> UserResponse:
     """Admin cria um usuário no PRÓPRIO tenant (US-002)."""
     if role not in ROLES:
@@ -115,12 +136,83 @@ async def create_user(
     user = User(
         tenant_id=tenant_id,
         email=email,
+        name=name.strip() if name else None,
         hashed_password=security.hash_password(password),
         role=role,
     )
     session.add(user)
     await session.flush()
     log.info("auth.user_created", tenant_id=str(tenant_id), user_id=str(user.id), role=role)
-    return UserResponse(
-        id=str(user.id), email=user.email, role=user.role, tenant_id=str(user.tenant_id)
+    return _to_user_response(user)
+
+
+async def list_users(session: AsyncSession, tenant_id: uuid.UUID) -> list[UserResponse]:
+    """Lista usuários do tenant (admin). Isolado por tenant_id."""
+    stmt = select(User).where(User.tenant_id == tenant_id).order_by(User.created_at)
+    users = (await session.execute(stmt)).scalars().all()
+    return [_to_user_response(u) for u in users]
+
+
+async def update_user(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    role: str | None = None,
+    is_active: bool | None = None,
+) -> UserResponse:
+    """Admin edita papel/ativação de um usuário do PRÓPRIO tenant."""
+    user = (
+        (await session.execute(select(User).where(User.id == user_id, User.tenant_id == tenant_id)))
+        .scalars()
+        .first()
     )
+    if user is None:
+        raise NotFoundError("usuário não encontrado")
+    if role is not None:
+        if role not in ROLES:
+            raise ValidationError(f"papel inválido: {role} (use {', '.join(ROLES)})")
+        user.role = role
+    if is_active is not None:
+        user.is_active = is_active
+    await session.flush()
+    log.info("auth.user_updated", tenant_id=str(tenant_id), user_id=str(user_id))
+    return _to_user_response(user)
+
+
+async def update_me(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    name: str | None = None,
+    password: str | None = None,
+) -> UserResponse:
+    """Usuário edita o próprio perfil (nome e/ou senha)."""
+    user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
+    if user is None:
+        raise NotFoundError("usuário não encontrado")
+    if name is not None:
+        user.name = name.strip() or None
+    if password is not None:
+        user.hashed_password = security.hash_password(password)
+    await session.flush()
+    log.info("auth.me_updated", user_id=str(user_id))
+    return _to_user_response(user)
+
+
+async def get_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> TenantResponse:
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()
+    if tenant is None:
+        raise NotFoundError("empresa não encontrada")
+    return TenantResponse(id=str(tenant.id), name=tenant.name, slug=tenant.slug)
+
+
+async def update_tenant(session: AsyncSession, tenant_id: uuid.UUID, name: str) -> TenantResponse:
+    """Admin edita o nome da empresa (tenant)."""
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()
+    if tenant is None:
+        raise NotFoundError("empresa não encontrada")
+    tenant.name = name.strip()
+    await session.flush()
+    log.info("tenant.updated", tenant_id=str(tenant_id))
+    return TenantResponse(id=str(tenant.id), name=tenant.name, slug=tenant.slug)

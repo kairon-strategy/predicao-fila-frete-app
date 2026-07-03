@@ -44,6 +44,29 @@ class PredictResponse(BaseModel):
     model_version: str
 
 
+class RouteResponse(BaseModel):
+    """Rota crua (para o CRUD de gestão)."""
+
+    route_id: str
+    origem: str
+    destino: str
+    produto: str
+    distancia_km: float
+    corredor: str | None
+    piso_antt_r_per_ton: float | None
+
+
+class RouteWrite(BaseModel):
+    """Payload de criar/editar rota."""
+
+    origem: str = Field(..., min_length=2, max_length=120)
+    destino: str = Field(..., min_length=2, max_length=120)
+    produto: str = Field(..., min_length=2, max_length=60)
+    distancia_km: float = Field(..., gt=0)
+    corredor: str | None = Field(default=None, max_length=60)
+    piso_antt_r_per_ton: float | None = Field(default=None, ge=0)
+
+
 class RouteRankingItem(BaseModel):
     """Uma linha do ranking de rotas (US-034)."""
 

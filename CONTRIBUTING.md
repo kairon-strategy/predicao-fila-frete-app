@@ -75,8 +75,10 @@ Boa parte é imposta por Ruff/mypy — o CI reprova. Os demais são disciplina:
 - **Sem `TODO` pelado.** Sempre referencie uma issue: `# TODO(#42): calibrar banda por corredor`.
 - **Sem SQLAlchemy 1.x.** Só a API 2.x (`Mapped[...]`, `mapped_column`, sessions async com asyncpg).
 - **Sem `time.sleep` em código async.** Ruff `ASYNC` pega isso; use `await asyncio.sleep(...)`.
-- **Sem import cross-context.** Um bounded context não importa outro (ADR-008). Comunique via `core` ou eventos (`core/events.py`). Ver [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+- **Sem import cross-context.** Um bounded context não importa outro (ADR-008). Comunique via `core` ou HTTP interno. Ver [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - **O LLM nunca prevê frete** (ADR-005). Não afrouxe os guardrails de `explanation/guardrails.py`.
+- **Sem Supabase Edge Functions** (ADR-012). Toda lógica de backend vai pela **API FastAPI**. Supabase é só Postgres gerenciado + Auth/Storage, nunca camada de compute.
+- **Sem microserviços prematuros** (ADR-008/013). Monólito modular no MVP; extrair serviços só quando houver escala/time. Fragmentar cedo é over-engineering.
 - **Sem dados reais comitados.** O histórico da Eurochem (e de qualquer cliente) nunca vai para o repo; dev usa dados sintéticos.
 - **Sem NoSQL, sem deep learning, sem Retool/low-code/no-code** (ADRs 003, 004, 009).
 

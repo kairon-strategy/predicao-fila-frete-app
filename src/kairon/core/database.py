@@ -27,6 +27,17 @@ class Base(DeclarativeBase):
     """
 
 
+def _connect_args() -> dict[str, object]:
+    """Ajustes por destino. No pooler do Supabase (Supavisor/PgBouncer) o asyncpg
+    precisa de `statement_cache_size=0` (prepared statements não sobrevivem ao
+    pooler) e SSL. Em Postgres local/direto, nada disso é necessário.
+    """
+    url = settings.async_database_url
+    if "pooler.supabase.com" in url or "supabase.co" in url:
+        return {"statement_cache_size": 0, "ssl": "require"}
+    return {}
+
+
 def _make_engine() -> AsyncEngine:
     return create_async_engine(
         settings.async_database_url,
@@ -34,6 +45,7 @@ def _make_engine() -> AsyncEngine:
         max_overflow=5,
         pool_pre_ping=True,  # detecta conexões mortas (Postgres reiniciado)
         echo=False,
+        connect_args=_connect_args(),
     )
 
 

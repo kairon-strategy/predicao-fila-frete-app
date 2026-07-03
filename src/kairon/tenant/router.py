@@ -1,6 +1,8 @@
-"""Router de autenticação: /v1/auth/login, /refresh, /me (US-001)."""
+"""Router de auth + perfil + empresa + usuários (US-001/002/006)."""
 
 from __future__ import annotations
+
+import uuid
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -17,7 +19,11 @@ from kairon.tenant.schemas import (
     MeResponse,
     RefreshRequest,
     RegisterRequest,
+    TenantResponse,
     TokenResponse,
+    UpdateMeRequest,
+    UpdateTenantRequest,
+    UpdateUserRequest,
     UserResponse,
 )
 
@@ -43,7 +49,16 @@ async def refresh(
 async def register(
     req: RegisterRequest, session: AsyncSession = Depends(get_session)
 ) -> TokenResponse:
-    return await service.register(session, req.tenant_name, req.email, req.password)
+    return await service.register(session, req.tenant_name, req.email, req.password, req.name)
+
+
+# ---- Usuários (CRUD, admin) ----
+@router.get("/users", response_model=list[UserResponse], summary="Lista usuários do tenant (admin)")
+async def list_users(
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_admin_guard),
+) -> list[UserResponse]:
+    return await service.list_users(session, principal.tenant_id)
 
 
 @router.post(
@@ -58,10 +73,25 @@ async def create_user(
     principal: Principal = Depends(_admin_guard),
 ) -> UserResponse:
     return await service.create_user(
-        session, principal.tenant_id, req.email, req.password, req.role
+        session, principal.tenant_id, req.email, req.password, req.role, req.name
     )
 
 
+@router.patch(
+    "/users/{user_id}", response_model=UserResponse, summary="Edita papel/ativação (admin)"
+)
+async def update_user(
+    user_id: uuid.UUID,
+    req: UpdateUserRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_admin_guard),
+) -> UserResponse:
+    return await service.update_user(
+        session, principal.tenant_id, user_id, role=req.role, is_active=req.is_active
+    )
+
+
+# ---- Perfil próprio ----
 @router.get("/me", response_model=MeResponse, summary="Dados do usuário autenticado")
 async def me(
     principal: Principal = Depends(get_principal),
@@ -78,5 +108,35 @@ async def me(
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
         email=user.email,
+        name=user.name,
         role=user.role,
     )
+
+
+@router.patch("/me", response_model=UserResponse, summary="Edita o próprio perfil (nome/senha)")
+async def update_me(
+    req: UpdateMeRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_principal),
+) -> UserResponse:
+    if not principal.authenticated or principal.user_id is None:
+        raise NotFoundError("nenhum usuário autenticado")
+    return await service.update_me(session, principal.user_id, name=req.name, password=req.password)
+
+
+# ---- Empresa (tenant) ----
+@router.get("/tenant", response_model=TenantResponse, summary="Dados da empresa (tenant)")
+async def get_tenant(
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(get_principal),
+) -> TenantResponse:
+    return await service.get_tenant(session, principal.tenant_id)
+
+
+@router.patch("/tenant", response_model=TenantResponse, summary="Edita a empresa (admin)")
+async def update_tenant(
+    req: UpdateTenantRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_admin_guard),
+) -> TenantResponse:
+    return await service.update_tenant(session, principal.tenant_id, req.name)

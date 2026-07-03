@@ -318,11 +318,11 @@ async def main() -> None:
 
         # --- usuários demo (idempotente por email) ---
         demo_users = [
-            ("admin@kairon.dev", "admin"),
-            ("analyst@kairon.dev", "analyst"),
-            ("viewer@kairon.dev", "viewer"),
+            ("admin@kairon.dev", "admin", "Eduardo Vasconcellos"),
+            ("analyst@kairon.dev", "analyst", "Ana Souza"),
+            ("viewer@kairon.dev", "viewer", "Vitor Lima"),
         ]
-        for email, role in demo_users:
+        for email, role, uname in demo_users:
             exists = (
                 (await session.execute(select(User).where(User.email == email))).scalars().first()
             )
@@ -331,6 +331,7 @@ async def main() -> None:
                     User(
                         tenant_id=DEV_TENANT_ID,
                         email=email,
+                        name=uname,
                         hashed_password=hash_password("demo1234"),
                         role=role,
                     )

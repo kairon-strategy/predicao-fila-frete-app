@@ -30,6 +30,8 @@ const TITLES: Record<string, string> = {
   "/ranking": "Ranking de rotas",
   "/copiloto": "Copiloto Kairon",
   "/alertas": "Alertas",
+  "/rotas": "Rotas & corredores",
+  "/configuracoes": "Configurações",
 };
 
 function HealthDot() {
