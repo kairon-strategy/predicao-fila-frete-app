@@ -140,7 +140,16 @@
       "Bash(echo \"/login -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login\\)\")",
       "Bash(git commit -q -m 'ui: tema claro como padrão \\(defaultTheme=light\\) *)",
       "Bash(grep -nE \"^#{1,3} \" README.md)",
-      "Bash(git commit -q -m 'docs: reconcilia README e ARCHITECTURE com o estado atual *)"
+      "Bash(git commit -q -m 'docs: reconcilia README e ARCHITECTURE com o estado atual *)",
+      "Bash(echo \"launched $!\")",
+      "Bash(curl -s --max-time 45 -o /dev/null -w '%{http_code}' -L http://localhost:3000/simulacao)",
+      "Bash(echo \"/simulacao -> $\\(curl -s --max-time 45 -o /dev/null -w '%{http_code}' -L http://localhost:3000/simulacao 2>/dev/null\\)\")",
+      "Bash(tail -20 /tmp/nd_final.log 2>/dev/null)",
+      "Bash(pkill -9 -f \"next dev\")",
+      "Bash(pkill -9 -f \"next-server\")",
+      "Bash(echo \"porta 3000: $\\(lsof -tiTCP:3000 || echo livre\\)\")",
+      "Bash(pkill -9 -f \"tsc\")",
+      "Bash(curl -s --max-time 5 -o /dev/null -w '%{http_code}\\\\n' http://localhost:8000/health)"
     ],
     "additionalDirectories": [
       "/private/tmp"

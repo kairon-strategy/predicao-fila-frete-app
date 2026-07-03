@@ -214,6 +214,21 @@ export type SimulateResponse = {
   iterations: number;
   note: string;
 };
+export type SegmentSimResult = {
+  segment: string;
+  base_freight: number;
+  mean: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  delta_pct: number;
+};
+export type SimulateSegmentsResponse = {
+  iterations: number;
+  drivers: Record<string, number>;
+  segments: SegmentSimResult[];
+};
+export type SegmentBase = { segment: string; base_freight: number };
 export type Alert = {
   id: number;
   severity: "critical" | "warn" | "info";
@@ -309,6 +324,14 @@ export const api = {
       method: "POST",
       body: { base_freight, iterations },
     }),
+  // Monte Carlo por segmento (diesel · safra · piso ANTT)
+  simulateSegments: (body: {
+    diesel_pct: number;
+    safra_pct: number;
+    piso_pct: number;
+    iterations: number;
+    bases: SegmentBase[];
+  }) => request<SimulateSegmentsResponse>("/v1/simulate/segments", { method: "POST", body }),
 
   // alerts
   getAlerts: (severity?: string, alertType?: string, status = "active") => {
