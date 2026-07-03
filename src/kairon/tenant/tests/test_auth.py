@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from kairon.tenant import security
-from kairon.tenant.auth import DEFAULT_TENANT_ID, get_principal, require_role
+from kairon.tenant.auth import get_principal, require_role
 
 
 def test_password_hash_roundtrip() -> None:
@@ -40,11 +40,11 @@ def test_decode_garbage_returns_none() -> None:
     assert security.decode_token("nao.e.um.jwt") is None
 
 
-async def test_get_principal_anonymous_is_default_tenant() -> None:
-    principal = await get_principal(authorization=None)
-    assert principal.authenticated is False
-    assert principal.tenant_id == DEFAULT_TENANT_ID
-    assert principal.role == "admin"  # compat MVP
+async def test_get_principal_anonymous_rejected_401() -> None:
+    # Sem token -> 401 (nunca mais anônimo tratado como admin).
+    with pytest.raises(HTTPException) as exc:
+        await get_principal(authorization=None)
+    assert exc.value.status_code == 401
 
 
 async def test_get_principal_bad_scheme_401() -> None:

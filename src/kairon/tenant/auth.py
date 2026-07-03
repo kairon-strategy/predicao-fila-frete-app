@@ -1,10 +1,10 @@
 """Autenticação/autorização por request (US-001/US-004/US-006).
 
 - `Principal`: quem está fazendo a request (tenant + papel).
-- `get_principal`: extrai do JWT. Sem token -> principal ANÔNIMO no tenant default
-  (compat MVP: os endpoints públicos de predição continuam funcionando).
-  Token presente porém inválido -> 401.
-- `require_role`: RBAC (admin | analyst | viewer).
+- `get_principal`: extrai do JWT. Sem token OU token inválido -> 401
+  (autenticação é obrigatória em todo endpoint protegido; /health, login e
+  register são públicos por não dependerem deste dependency).
+- `require_role`: RBAC (admin | analyst | viewer) sobre um principal autenticado.
 """
 
 from __future__ import annotations
@@ -33,13 +33,10 @@ class Principal:
     authenticated: bool = False
 
 
-# Anônimo: tenant default, papel admin (compat MVP — endpoints abertos seguem full).
-_ANONYMOUS = Principal(tenant_id=DEFAULT_TENANT_ID, role="admin", user_id=None, authenticated=False)
-
-
 async def get_principal(authorization: str | None = Header(default=None)) -> Principal:
+    # Autenticação obrigatória: sem Authorization -> 401 (nunca mais anônimo=admin).
     if not authorization:
-        return _ANONYMOUS
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "autenticação obrigatória")
     if not authorization.lower().startswith("bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "esquema de auth inválido")
 

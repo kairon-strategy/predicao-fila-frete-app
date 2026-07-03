@@ -177,6 +177,30 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest_asyncio.fixture
+async def auth_client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """Client autenticado como admin no tenant default.
+
+    Endpoints protegidos exigem token (get_principal -> 401 sem auth). Módulos que
+    exercitam esses endpoints sobrescrevem `client` para apontar aqui.
+    """
+    import uuid
+
+    from kairon.tenant.auth import DEFAULT_TENANT_ID
+    from kairon.tenant.security import create_access_token
+
+    token = create_access_token(
+        user_id=uuid.UUID(int=1), tenant_id=DEFAULT_TENANT_ID, role="admin"
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
 async def seed_route(engine: AsyncEngine) -> None:
     """Insert the default tenant + canonical Sinop-MT -> Sorriso-MT / ureia route.
 

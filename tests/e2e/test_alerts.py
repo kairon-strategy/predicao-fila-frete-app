@@ -11,6 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest_asyncio.fixture
+async def client(auth_client: httpx.AsyncClient) -> httpx.AsyncClient:
+    """Endpoints protegidos: usa o client autenticado (admin, tenant default)."""
+    return auth_client
+
+
+@pytest_asyncio.fixture
 async def spiky_diesel(engine: AsyncEngine) -> None:
     """Insere série de diesel para a UF 'ZZ' com um salto no valor mais recente."""
     from kairon.ingestion.anp.models import RawDieselPrice
@@ -78,7 +84,7 @@ async def test_severity_filter(client: httpx.AsyncClient, spiky_diesel: None) ->
 async def test_alerts_isolated_by_tenant(client: httpx.AsyncClient, spiky_diesel: None) -> None:
     from kairon.tenant.security import create_access_token
 
-    # detecção anônima cria alertas no tenant default
+    # detecção (admin do tenant default) cria alertas no tenant default
     await client.post("/v1/alerts/detect")
     assert len((await client.get("/v1/alerts")).json()) >= 1
 

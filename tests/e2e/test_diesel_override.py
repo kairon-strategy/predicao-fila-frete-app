@@ -12,6 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest_asyncio.fixture
+async def client(auth_client: httpx.AsyncClient) -> httpx.AsyncClient:
+    """Endpoints protegidos: usa o client autenticado (admin, tenant default)."""
+    return auth_client
+
+
+@pytest_asyncio.fixture
 async def long_route(engine: AsyncEngine) -> None:
     from kairon.prediction.db_models import Route
     from kairon.tenant.auth import DEFAULT_TENANT_ID

@@ -100,7 +100,17 @@
       "Bash(psql --version)",
       "Bash(sed -E 's/\\(:\\\\/\\\\/[^:]+:\\)[^@]+\\(@\\)/\\\\1****\\\\2/')",
       "Bash(poetry run python -c ' *)",
-      "Bash(grep -E \"\\(^|/\\)\\\\.env$\")"
+      "Bash(grep -E \"\\(^|/\\)\\\\.env$\")",
+      "Bash(git commit -q -m 'feat: CRUDs \\(rotas/usuários/perfil-empresa\\) + Supabase como banco *)",
+      "Bash(lsof -tiTCP:8000)",
+      "Bash(echo \"porta 8000: $\\(lsof -tiTCP:8000 || echo livre\\)\")",
+      "Bash(echo \"iniciando... pid=$!\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('alertas ativos:', len\\(d\\)\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/auth/users)",
+      "Bash(echo \"GET /v1/auth/users sem token -> HTTP $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/auth/users\\)\")",
+      "Bash(echo \"BUILD_EXIT=$?\")",
+      "Bash(createdb -h localhost -U kairon kairon_test)",
+      "Bash(echo \"rc=$?\")"
     ],
     "additionalDirectories": [
       "/private/tmp"

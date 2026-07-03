@@ -5,8 +5,15 @@ from __future__ import annotations
 
 import httpx
 import pytest
+import pytest_asyncio
 
 pytestmark = pytest.mark.usefixtures("seed_route")
+
+
+@pytest_asyncio.fixture
+async def client(auth_client: httpx.AsyncClient) -> httpx.AsyncClient:
+    """Endpoints protegidos: usa o client autenticado (admin, tenant default)."""
+    return auth_client
 
 
 async def _first_prediction_id(client: httpx.AsyncClient) -> str:
