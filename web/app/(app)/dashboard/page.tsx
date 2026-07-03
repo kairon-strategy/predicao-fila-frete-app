@@ -126,7 +126,7 @@ export default function DashboardPage() {
                   <Icon className={`mt-0.5 size-4 shrink-0 ${sevTone[a.severity]}`} />
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-medium">{a.title}</div>
-                    <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{a.body}</div>
+                    <div className="mt-0.5 line-clamp-3 text-xs text-muted-foreground">{a.body}</div>
                   </div>
                 </div>
               );

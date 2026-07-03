@@ -48,14 +48,12 @@ async def login(
 ) -> TokenResponse:
     # Rate limit anti brute-force (por IP+email). Estourou -> 429.
     key = f"{_client_ip(request)}:{req.email.strip().lower()}"
-    if not ratelimit.hit(
-        key,
-        max_attempts=settings.login_max_attempts,
-        window_seconds=settings.login_window_min * 60,
-    ):
+    window_seconds = settings.login_window_min * 60
+    if not ratelimit.hit(key, max_attempts=settings.login_max_attempts, window_seconds=window_seconds):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             "muitas tentativas de login; tente novamente em alguns minutos",
+            headers={"Retry-After": str(window_seconds)},  # RFC 6585: cliente sabe quando voltar
         )
     tokens = await service.login(session, req.email, req.password)
     ratelimit.reset(key)  # login OK zera o contador

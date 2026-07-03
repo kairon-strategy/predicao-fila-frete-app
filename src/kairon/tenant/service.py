@@ -28,6 +28,11 @@ class ConflictError(KaironError):
     error_code = "conflict"
 
 
+# Hash "dummy" (bcrypt válido) para gastar o MESMO tempo quando o usuário não
+# existe/está inativo — evita timing attack de enumeração de emails (OWASP).
+_DUMMY_PASSWORD_HASH = security.hash_password("kairon-timing-guard")
+
+
 async def _get_user_by_email(session: AsyncSession, email: str) -> User | None:
     stmt = select(User).where(User.email == email.strip().lower())
     return (await session.execute(stmt)).scalars().first()
@@ -35,14 +40,13 @@ async def _get_user_by_email(session: AsyncSession, email: str) -> User | None:
 
 async def login(session: AsyncSession, email: str, password: str) -> TokenResponse:
     user = await _get_user_by_email(session, email)
-    # Verifica senha mesmo se user None? Não temos hash; retornamos erro genérico.
-    if (
-        user is None
-        or not user.is_active
-        or not security.verify_password(password, user.hashed_password)
-    ):
-        # Nota: audit de falha seria revertido no rollback da request; o log
-        # estruturado abaixo é a trilha de tentativas inválidas.
+    # Tempo constante: roda bcrypt mesmo sem usuário (contra o dummy) para que a
+    # latência não revele se o email existe. Mensagem sempre genérica.
+    if user is None or not user.is_active:
+        security.verify_password(password, _DUMMY_PASSWORD_HASH)
+        log.warning("auth.login_failed", email_hash=hash(email))
+        raise AuthError("credenciais inválidas")
+    if not security.verify_password(password, user.hashed_password):
         log.warning("auth.login_failed", email_hash=hash(email))
         raise AuthError("credenciais inválidas")
 

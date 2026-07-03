@@ -55,8 +55,10 @@ class Settings(BaseSettings):
     # tenants fica desligado por padrão — ligue só para trials self-serve.
     allow_open_registration: bool = False
     # Rate limit no login (anti brute-force): X tentativas por janela (min) por IP+email.
+    # Janela curta o suficiente para não travar QA/demo; em dev pode-se reduzir
+    # ainda mais via env (LOGIN_WINDOW_MIN=1).
     login_max_attempts: int = 5
-    login_window_min: int = 15
+    login_window_min: int = 5
 
     # ---- Supabase ----
     supabase_url: str = ""
