@@ -4,36 +4,48 @@
 
 **Kairon Frete** é um SaaS + TaaS de **predição de frete rodoviário** para o agro brasileiro (fertilizante e grãos). O motor combina um **baseline determinístico**, um **LightGBM** que prevê o resíduo, **bandas de quantil** (P10/P90), explicação por **SHAP** e um **copiloto Claude Sonnet** que só _explica_ a predição — nunca prevê frete. É um monólito modular (cada pasta em `src/kairon/` é um _bounded context_ que vira microserviço na v2).
 
-> **Meta MVP (jul–out/2026):** 3 clientes, R$ 180–280k ARR, 55 rotas ativas. Time: 1 engenheiro. Prioridade: **manutenibilidade sobre sofisticação**.
+> **Meta MVP (jul–out/2026):** 3 clientes, R$ 180–280k ARR, ~60 rotas ativas. Time: 1 engenheiro. Prioridade: **manutenibilidade sobre sofisticação**.
+
+## Stack
+
+- **Backend:** Python 3.12 · FastAPI (async) · SQLAlchemy 2.x + asyncpg · Alembic · LightGBM/SHAP · Claude SDK.
+- **Frontend:** Next.js 16 (App Router, React 19) · Tailwind v4 · shadcn/ui — em [`web/`](./web/).
+- **Banco:** Postgres 16 (local em dev) ou **Supabase** (Postgres gerenciado, prod). O Supabase é usado **só como banco + Auth/Storage** — nunca como camada de compute (ADR-012).
 
 ## Requisitos
 
-- **Docker** + Docker Compose
-- **Poetry** (para dev fora do container)
-- **Python 3.12** (`~3.12`, ver `.python-version`)
+- **Python 3.12** (`~3.12`, ver `.python-version`) + **Poetry**
+- **Node 20+** (para o front Next.js em `web/`)
+- **Postgres 16** local — ou uma connection string do Supabase em `DATABASE_URL`
+- Docker é **opcional** (o `docker-compose` sobe API + Postgres para quem preferir)
 
-## Setup rápido (clone → rodando em ≤ 15 min)
+## Setup rápido (clone → rodando)
 
 ```bash
 # 1. Variáveis de ambiente
 cp .env.example .env
-#    Preencha ANTHROPIC_API_KEY e SENTRY_DSN se quiser LLM real + Sentry.
-#    Ambos são OPCIONAIS: sem eles a app degrada com elegância
-#    (/v1/explain cai para template estático; Sentry fica desligado).
+#    - DATABASE_URL vazio => usa o Postgres local (POSTGRES_* do .env).
+#    - Para apontar ao Supabase, preencha DATABASE_URL (forma asyncpg, pooler).
+#    - ANTHROPIC_API_KEY e SENTRY_DSN são OPCIONAIS: sem eles a app degrada com
+#      elegância (/v1/explain cai para template estático; Sentry fica desligado).
 
-# 2. Dependências + pre-commit hooks (dev fora do container)
+# 2. Dependências do backend + pre-commit hooks
 make install
 
-# 3. Sobe toda a stack (api, ui, worker, postgres, redis)
-make docker-up
-#    O container `api` roda `alembic upgrade head` no boot — as migrations
-#    são aplicadas automaticamente. Rodando fora do docker, use `make db-migrate`.
+# 3. Migrations (cria/atualiza o schema)
+make db-migrate            # alembic upgrade head
 
-# 4. Popula o Postgres com dados SINTÉTICOS (55 rotas + diesel + histórico)
+# 4. Popula com dados SINTÉTICOS (~60 rotas + diesel + histórico + 3 usuários demo)
 make seed
+
+# 5. Sobe a API (:8000)
+make run-api
+
+# 6. Sobe o front Next.js (:3000) — noutro terminal
+cd web && npm install && npm run dev
 ```
 
-- **UI (Streamlit):** http://localhost:8501
+- **App (UI Next.js):** http://localhost:3000
 - **API docs (Swagger/OpenAPI):** http://localhost:8000/docs
 - **Health / readiness:** http://localhost:8000/health · http://localhost:8000/ready
 
@@ -52,42 +64,55 @@ Todos os alvos vivem no `Makefile` (rode `make help` para a lista viva).
 | `make typecheck` | mypy (strict) |
 | `make test` | pytest com cobertura (falha se < 70%) |
 | `make run-api` | Sobe a API FastAPI local com hot reload em `:8000` |
-| `make run-ui` | Sobe a UI Streamlit local em `:8501` |
 | `make etl-anp` | Roda o ETL ANP uma vez (baixa CSV do diesel, normaliza, grava) |
 | `make db-migrate` | Aplica migrations Alembic (`upgrade head`) |
 | `make db-revision` | Cria migration: `make db-revision m="mensagem"` |
-| `make seed` | Popula o Postgres com dados sintéticos |
-| `make docker-up` | Sobe toda a stack (api, ui, worker, postgres, redis) |
+| `make seed` | Popula o banco com dados sintéticos |
+| `make docker-up` | Sobe API + Postgres via docker-compose (opcional) |
 | `make docker-down` | Derruba a stack (mantém volumes) |
 | `make docker-nuke` | Derruba a stack **e apaga volumes** (reset total) |
 
+O front (Next.js) roda com `cd web && npm run dev` (dev) ou `npm run build && npm start` (prod).
+
 ## Endpoints
 
-Superfície HTTP atual, agrupada por context. Prefixo `/v1` em tudo exceto os endpoints de ops. RBAC (`admin` | `analyst` | `viewer`) só entra **quando há token**; sem token a request resolve para o tenant default com papel `admin` (compat MVP — ver [Autenticação e papéis](#autenticação-e-papéis)).
+Superfície HTTP atual, agrupada por context. Prefixo `/v1` em tudo exceto os endpoints de ops. **Todo endpoint `/v1` exige autenticação** (sem token → `401`); o RBAC (`admin` | `analyst` | `viewer`) é aplicado por cima — ver [Autenticação e papéis](#autenticação-e-papéis).
 
 ### Ops (sem prefixo, sem auth)
 
 | Método | Path | Auth | Propósito |
 |--------|------|------|-----------|
 | GET | `/health` | — | Liveness: o processo está de pé (não checa dependências). |
-| GET | `/ready` | — | Readiness: Postgres + Redis obrigatórios; reporta `llm_configured`. |
+| GET | `/ready` | — | Readiness: Postgres obrigatório; reporta `llm_configured` sem bloquear. |
 | GET | `/metrics` | — | Métricas Prometheus (contadores por path-template). |
 
-### Auth — context `tenant` (US-001)
+### Auth — context `tenant`
 
-| Método | Path | Auth | Propósito |
-|--------|------|------|-----------|
-| POST | `/v1/auth/login` | — | `{email, password}` → `{access_token, refresh_token, token_type}`. |
-| POST | `/v1/auth/refresh` | refresh token | `{refresh_token}` → novo par de tokens. |
-| GET | `/v1/auth/me` | Bearer | Dados do usuário autenticado (404 se anônimo). |
+| Método | Path | Auth / RBAC | Propósito |
+|--------|------|-------------|-----------|
+| POST | `/v1/auth/login` | público (rate-limited) | `{email, password}` → `{access_token, refresh_token, token_type}`. |
+| POST | `/v1/auth/refresh` | refresh token | `{refresh_token}` → novo par; **`401` se a sessão foi revogada**. |
+| POST | `/v1/auth/register` | público **se habilitado** | Cria tenant + admin. **Invite-only por padrão → `403`** (`allow_open_registration`). |
+| POST | `/v1/auth/logout` | Bearer | Revoga a sessão (invalida os refresh tokens). |
+| GET | `/v1/auth/me` | Bearer | Dados do usuário autenticado. |
+| PATCH | `/v1/auth/me` | Bearer | Edita o próprio nome/senha (trocar a senha revoga sessões). |
+| GET | `/v1/auth/users` | `admin` | Lista usuários do tenant. |
+| POST | `/v1/auth/users` | `admin` | Cria usuário no tenant (papel validado por enum). |
+| PATCH | `/v1/auth/users/{id}` | `admin` | Edita papel/ativação **e reseta senha** (revoga sessões do alvo). |
+| GET | `/v1/auth/tenant` | Bearer | Dados da empresa (tenant). |
+| PATCH | `/v1/auth/tenant` | `admin` | Edita o nome da empresa. |
 
 ### Prediction — context `prediction`
 
 | Método | Path | Auth / RBAC | Propósito |
 |--------|------|-------------|-----------|
-| POST | `/v1/predict` | header `idempotency-key` obrigatório; se autenticado exige `admin`\|`analyst` (US-006); anônimo = tenant default, papel `admin` | Prevê frete (R$/t) para uma rota. |
+| POST | `/v1/predict` | `admin`\|`analyst` + header `idempotency-key` | Prevê frete (R$/t) para uma rota. |
 | GET | `/v1/routes` | qualquer papel (inclui `viewer`) | Ranking de rotas; filtros `?produto=&corredor=`. |
 | GET | `/v1/routes/{route_id}/history` | qualquer papel | Série histórica da rota; `?months=` (1–36, default 12). |
+| GET | `/v1/routes/manage` | qualquer papel | Lista rotas (gestão/CRUD). |
+| POST | `/v1/routes` | `admin`\|`analyst` | Cria rota. |
+| PUT | `/v1/routes/{id}` | `admin`\|`analyst` | Edita rota. |
+| DELETE | `/v1/routes/{id}` | `admin`\|`analyst` | Exclui rota (204). |
 
 ### Explanation — context `explanation`
 
@@ -100,10 +125,8 @@ Superfície HTTP atual, agrupada por context. Prefixo `/v1` em tudo exceto os en
 | Método | Path | Auth / RBAC | Propósito |
 |--------|------|-------------|-----------|
 | POST | `/v1/simulate` | qualquer papel | Monte Carlo síncrono (`{base_freight, iterations}`). |
-| POST | `/v1/simulate/async` | qualquer papel | Dispara Monte Carlo assíncrono → `202 {job_id, status}` (US-023). |
-| GET | `/v1/simulate/{job_id}` | qualquer papel | Status/resultado de um job de simulação. |
 
-### Alerts — context `alerts` (EPIC 8)
+### Alerts — context `alerts`
 
 | Método | Path | Auth / RBAC | Propósito |
 |--------|------|-------------|-----------|
@@ -115,7 +138,13 @@ Superfície HTTP atual, agrupada por context. Prefixo `/v1` em tudo exceto os en
 
 Auth é **JWT** (access de 15 min + refresh de 7 dias), senha com **bcrypt**, RBAC de três papéis (`admin` | `analyst` | `viewer`) aplicado por `require_role`.
 
-> **MVP — anônimo funciona.** Sem header `Authorization`, a request resolve para um `Principal` anônimo no **tenant default** com papel **`admin`** — os endpoints públicos de predição continuam full para a cotação rápida do trader. Assim que um token é enviado, o RBAC passa a valer normalmente (ex.: um `viewer` autenticado recebe `403` em `POST /v1/predict`).
+- **Autenticação obrigatória.** Todo endpoint `/v1` exige `Authorization: Bearer <token>`; sem token → **`401`**. (Não existe mais o "anônimo = admin".) Token inválido/expirado → `401`.
+- **Registro por convite.** `POST /v1/auth/register` (cria tenant + admin) fica **desligado por padrão** (`allow_open_registration=False` → `403`). Novos usuários são criados por um `admin` via `POST /v1/auth/users`.
+- **Papel validado por enum** (`admin`|`analyst`|`viewer`) na borda (schema) e no service — papel inválido → `422`.
+- **Revogação de sessão.** O JWT carrega `tv` (token_version, coluna em `users`). **Logout** e **troca/reset de senha** incrementam o `tv` → os refresh tokens antigos param de valer imediatamente (`401` no `/refresh`); o access token atual expira em ≤15 min. Sem denylist/estado por request.
+- **Reset de senha por admin** via `PATCH /v1/auth/users/{id}` (revoga as sessões do alvo). O próprio usuário troca a senha em `PATCH /v1/auth/me`.
+- **Rate limit no login** (anti brute-force): `login_max_attempts` (5) por `login_window_min` (15) por IP+email → `429`.
+- **Auditoria:** login, registro, criação de usuário, reset de senha e logout gravam em `audit_events` (append-only).
 
 O `make seed` cria 3 usuários demo no tenant default (senha `demo1234`): `admin@kairon.dev`, `analyst@kairon.dev`, `viewer@kairon.dev`.
 
@@ -137,10 +166,11 @@ curl -s http://localhost:8000/v1/auth/me \
 
 ### `POST /v1/predict` — prevê frete (R$/tonelada)
 
-Requer o header **`idempotency-key`** (mesma chave → mesma predição, **escopada por tenant**). Body: `origem`, `destino`, `produto`, `data`, `carga_ton` (opcional). Funciona anônimo; com token exige papel `admin`\|`analyst`.
+Exige token (`admin`\|`analyst`) e o header **`idempotency-key`** (mesma chave → mesma predição, **escopada por tenant**). Body: `origem`, `destino`, `produto`, `data`, `carga_ton` (opcional), `diesel_price` (opcional, override de mercado).
 
 ```bash
 curl -X POST http://localhost:8000/v1/predict \
+  -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -H "idempotency-key: demo-2026-08-15-sinop-sorriso-ureia" \
   -d '{
@@ -157,7 +187,8 @@ Resposta (resumida): `prediction_id`, `frete_r_per_ton`, `banda_p10`, `banda_p90
 ### `GET /v1/routes` — ranking de rotas
 
 ```bash
-curl "http://localhost:8000/v1/routes?produto=ureia&corredor=BR-163"
+curl -H "Authorization: Bearer $ACCESS" \
+  "http://localhost:8000/v1/routes?produto=ureia&corredor=BR-163"
 ```
 
 Resposta: lista de rotas com `route_id`, `origem`, `destino`, `frete_r_per_ton`, `r_per_ton_km`, banda P10/P90 e `var_30d_pct`.
@@ -168,6 +199,7 @@ Recebe o `prediction_id` retornado por `/v1/predict` e uma `question` opcional (
 
 ```bash
 curl -X POST http://localhost:8000/v1/explain \
+  -H "Authorization: Bearer $ACCESS" \
   -H "Content-Type: application/json" \
   -d '{
     "prediction_id": "<COLE_O_PREDICTION_ID_AQUI>",
@@ -187,7 +219,8 @@ curl -X POST http://localhost:8000/v1/alerts/detect \
   -H "Authorization: Bearer $ACCESS"
 
 # Lê o feed do tenant (filtros opcionais)
-curl "http://localhost:8000/v1/alerts?severity=critical&status=active"
+curl -H "Authorization: Bearer $ACCESS" \
+  "http://localhost:8000/v1/alerts?severity=critical&status=active"
 ```
 
 ## Como adicionar uma nova rota
@@ -204,24 +237,35 @@ Duas opções:
 ```
 src/kairon/
   main.py          # FastAPI app factory — único ponto que monta todos os routers
-  core/            # cross-cutting: config, logging, database, events (Redis), exceptions
-  prediction/      # baseline + LightGBM (resíduo) + quantil + SHAP — /v1/predict, /v1/routes
-  simulation/      # Monte Carlo (sync + job assíncrono) — /v1/simulate*
+  core/            # cross-cutting: config, logging, database, exceptions
+  prediction/      # baseline + LightGBM (resíduo) + quantil + SHAP — /v1/predict, /v1/routes*
+  simulation/      # Monte Carlo síncrono — /v1/simulate
   explanation/     # copiloto Claude + guardrails — POST /v1/explain
   alerts/          # detector de spike de diesel + feed/resolve — /v1/alerts*
-  ingestion/       # ETL ANP (diesel) + flow Prefect
-  tenant/          # auth JWT + RBAC (require_role) — /v1/auth/*
-  audit/           # log append-only
-ui/                # UI Streamlit (app.py, pages/, components/)
+  ingestion/       # ETL ANP (diesel)
+  tenant/          # auth JWT + RBAC + rate limit + revogação — /v1/auth/*
+  audit/           # log append-only (audit_events)
+web/               # front Next.js (App Router, Tailwind, shadcn/ui)
 scripts/           # seed_synthetic_data.py, train_baseline_model.py
-migrations/        # Alembic
-docker/            # Dockerfiles (api, ui, worker)
+migrations/        # Alembic (0001..0006)
+docker/            # Dockerfiles (api)
 tests/             # testes (também há tests/ por context em src/)
+ui/                # LEGADO: UI Streamlit inicial — substituída por web/ (ver ADR-006)
+```
+
+## Frontend (Next.js)
+
+O front vive em [`web/`](./web/) — **Next.js 16** (App Router, React 19), **Tailwind v4** e **shadcn/ui**, tema claro/escuro (padrão claro). Fala com a API via `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`); JWT no `localStorage` com refresh automático em `401`. Telas: dashboard, predição, ranking, previsão, simulação, alertas, copiloto, rotas & corredores e configurações (perfil/empresa/usuários).
+
+```bash
+cd web
+npm install
+npm run dev      # dev em :3000  (ou: npm run build && npm start)
 ```
 
 ## Secrets do repositório (CI/CD)
 
-Configure no GitHub (Settings → Secrets and variables → Actions). A CI roda lint + typecheck + testes contra Postgres/Redis reais e **mantém `ANTHROPIC_API_KEY` vazia de propósito** (para testar a degradação do `/v1/explain`). Os secrets abaixo são usados por CI/CD e runtime de prod:
+Configure no GitHub (Settings → Secrets and variables → Actions). A CI roda lint + typecheck + testes contra um Postgres real e **mantém `ANTHROPIC_API_KEY` vazia de propósito** (para testar a degradação do `/v1/explain`). Os secrets abaixo são usados por CI/CD e runtime de prod:
 
 - `ANTHROPIC_API_KEY` — Claude Sonnet (copiloto)
 - `SENTRY_DSN` — observabilidade de erros
@@ -231,8 +275,8 @@ Configure no GitHub (Settings → Secrets and variables → Actions). A CI roda 
 
 ## Arquitetura em 5 linhas
 
-1. **UI Streamlit** e clientes chamam a **API FastAPI** (async, OpenAPI, Pydantic); auth é **JWT + RBAC**, com anônimo liberado no MVP.
+1. **Front Next.js** e clientes chamam a **API FastAPI** (async, OpenAPI, Pydantic); auth é **JWT + RBAC**, **autenticação obrigatória** em todo `/v1` (sem anônimo).
 2. Middleware injeta **correlation-id** + logging estruturado JSON; erros de domínio viram JSON; observability via **Sentry** + `/health` `/ready` `/metrics` (Prometheus).
-3. **Bounded contexts** (core, ingestion, prediction, simulation, explanation, tenant, audit, alerts) só conversam via `core`/eventos — **zero import cross-context**.
+3. **Bounded contexts** (core, ingestion, prediction, simulation, explanation, tenant, audit, alerts) só conversam via `core` — **zero import cross-context**.
 4. Pipeline de predição: **baseline → resíduo LightGBM → banda de quantil → SHAP**; alertas por **detector de spike de diesel** sobre dados locais.
-5. **Postgres** é a fonte da verdade (isolamento multi-tenant na camada de aplicação); **Redis** faz cache/streams; **Backblaze B2** é o data lake. Detalhes e ADRs em [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+5. **Postgres/Supabase** é a fonte da verdade (isolamento multi-tenant na aplicação **+ RLS no banco**); **Backblaze B2** é o data lake. Detalhes e ADRs em [`ARCHITECTURE.md`](./ARCHITECTURE.md).

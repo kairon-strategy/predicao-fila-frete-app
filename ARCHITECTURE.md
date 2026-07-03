@@ -11,7 +11,7 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 | 003 | **Postgres** como source-of-truth. Sem NoSQL no MVP. |
 | 004 | **LightGBM** como modelo principal. Sem deep learning no v1 e v2. |
 | 005 | **Claude Sonnet** como LLM. Guardrails hard: o LLM **nunca prevê frete, só explica**. |
-| 006 | **Streamlit** no MVP UI. Next.js entra na v2. |
+| 006 | **Next.js** (App Router, Tailwind, shadcn/ui) como UI do produto, em `web/`. _(Substituiu o Streamlit, que era o plano inicial de MVP.)_ |
 | 007 | **Backblaze B2** como data lake (Backblaze CLI para dev local). |
 | 008 | **Monólito modular** no MVP (deploy único, módulos separados por bounded context). Microserviços na v2. |
 | 009 | Sem Retool, sem low-code, sem no-code. |
@@ -25,7 +25,7 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ 1. CLIENTES / UI                                                      │
-│    UI Streamlit (:8501)  ·  clientes HTTP  ·  curl / integrações      │
+│    Front Next.js (:3000)  ·  clientes HTTP  ·  curl / integrações     │
 └───────────────────────────────┬─────────────────────────────────────┘
                                  │ HTTP (JSON)
 ┌───────────────────────────────▼─────────────────────────────────────┐
@@ -38,7 +38,7 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │ 2b. AUTH / RBAC (dependency por request)                             │
 │    get_principal: JWT (Bearer) → Principal(tenant_id, role)          │
-│    sem token → anônimo (tenant default, papel admin — compat MVP)   │
+│    sem token → 401 (autenticação obrigatória)                       │
 │    require_role(admin|analyst|viewer)  ·  toda query filtra tenant_id│
 └───────────────────────────────┬─────────────────────────────────────┘
                                  │
@@ -47,7 +47,7 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 │  ┌───────────┐ ┌────────────┐ ┌─────────────┐                        │
 │  │ prediction│ │ simulation │ │ explanation │                        │
 │  │/v1/predict│ │/v1/simulate│ │ /v1/explain │                        │
-│  │ /v1/routes│ │  (+async)  │ │             │                        │
+│  │ /v1/routes│ │            │ │             │                        │
 │  └───────────┘ └────────────┘ └─────────────┘                        │
 │  ┌───────────┐ ┌────────────┐ ┌─────────────┐                        │
 │  │ ingestion │ │  tenant    │ │   alerts    │                        │
@@ -62,19 +62,18 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
                                  │ (contexts só falam via ↓)
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │ 4. CORE (cross-cutting)                                               │
-│    config  ·  logging  ·  database  ·  events (Redis Streams)         │
-│    exceptions                                                         │
+│    config  ·  logging  ·  database  ·  exceptions                    │
 └───────────────────────────────┬─────────────────────────────────────┘
                                  │
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │ 5. DADOS                                                              │
-│    Postgres (source of truth)  ·  Redis (cache + streams)            │
+│    Postgres / Supabase (source of truth, RLS)                       │
 │    Backblaze B2 (data lake)                                          │
 └───────────────────────────────┬─────────────────────────────────────┘
                                  │
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │ 6. EXTERNOS                                                           │
-│    ANP (diesel)  ·  Anthropic Claude  ·  Supabase  ·  Sentry         │
+│    ANP (diesel)  ·  Anthropic Claude  ·  Sentry                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -82,11 +81,11 @@ Documento vivo das decisões e da forma do sistema. Objetivo: um engenheiro ente
 
 O sistema é **um único deploy**, mas cada pasta em `src/kairon/` é um _bounded context_ autônomo. A regra dura:
 
-- **Contexts NÃO se importam entre si.** `prediction` não faz `import kairon.audit`, etc.
-- A comunicação acontece só de duas formas:
-  - via **`core`** (config, database, logging — infra compartilhada), ou
-  - via **eventos** (`core/events.py`, Redis Streams): um context publica, outro consome. No MVP o consumo é opcional; o publisher já deixa o padrão pronto.
+- **Contexts NÃO se importam entre si** para lógica de negócio. `prediction` não faz `import kairon.simulation`, etc.
+- A comunicação acontece via **`core`** (config, database, logging — infra compartilhada). O `audit` é um context de suporte com uma interface fina (`audit.writer.write_event`) que outros contexts chamam para gravar a trilha append-only.
 - **`main.py` é o único lugar** que conhece todos os contexts — ele monta os routers (`include_router`). Isso é o "deploy único" do monólito.
+
+> **Nota (corte de MVP):** o barramento de eventos via Redis Streams (`core/events.py`) e o worker Prefect foram **removidos** — eram over-engineering para o MVP. Cache/streams/filas voltam só quando houver necessidade real. Redis não faz parte da stack atual.
 
 Consequência prática: na v2, extrair um context para microserviço é recortar a pasta + trocar a chamada in-process por rede. Manter a disciplina de import agora é o que torna isso barato depois.
 
@@ -94,14 +93,18 @@ Consequência prática: na v2, extrair um context para microserviço é recortar
 
 Auth vive no context `tenant` e é aplicada como **dependency por request**, não como middleware bloqueante:
 
-- **JWT** (`python-jose`, HS256): access token de **15 min** + refresh de **7 dias**. Claims: `sub` (user_id), `tenant_id`, `role`, `type`. Senha com **bcrypt** (`hash_password`/`verify_password`, sem passlib).
-- **`get_principal`** decodifica o `Authorization: Bearer <token>` num `Principal(tenant_id, role, user_id, authenticated)`. **Sem token → `Principal` anônimo no tenant default (`uuid.UUID(int=0)`) com papel `admin`** — é a compat MVP que mantém os endpoints públicos de predição funcionando para a cotação rápida do trader. Token presente porém inválido/expirado → `401`.
-- **RBAC** via `require_role(*allowed)`: dependency factory que devolve `403` se `principal.role` não estiver na lista. Papéis: `admin` | `analyst` | `viewer`. Uso atual: `POST /v1/predict` e `POST /v1/alerts/detect` exigem `admin|analyst`; leituras aceitam qualquer papel (incluindo anônimo).
+- **JWT** (`python-jose`, HS256): access token de **15 min** + refresh de **7 dias**. Claims: `sub` (user_id), `tenant_id`, `role`, `type`, `tv` (token_version). Senha com **bcrypt** (`hash_password`/`verify_password`, sem passlib).
+- **`get_principal`** decodifica o `Authorization: Bearer <token>` num `Principal(tenant_id, role, user_id, authenticated)`. **Sem token → `401` (autenticação obrigatória)**; token inválido/expirado → `401`. Não existe mais principal anônimo.
+- **RBAC** via `require_role(*allowed)`: dependency factory que devolve `403` se `principal.role` não estiver na lista. Papéis: `admin` | `analyst` | `viewer` (validados por enum na borda). `POST /v1/predict`, escritas de rota e `POST /v1/alerts/detect` exigem `admin|analyst`; gestão de usuários/empresa exige `admin`; leituras aceitam qualquer papel autenticado.
+- **Registro por convite:** `POST /v1/auth/register` fica desligado por padrão (`allow_open_registration=False` → `403`); admins criam usuários via `POST /v1/auth/users`.
+- **Revogação de sessão (token_version):** o claim `tv` é comparado com `users.token_version` no `/refresh`. **Logout** e **troca/reset de senha** incrementam o `token_version` → refresh tokens antigos passam a dar `401`; o access token vigente expira em ≤15 min. Mantém o caminho de request **stateless** (sem denylist).
+- **Rate limit no login:** janela deslizante in-memory por IP+email (`login_max_attempts`/`login_window_min`) → `429`. MVP single-instance; trocar por store compartilhado ao escalar.
+- **Auditoria:** `audit.writer.write_event` grava login, registro, criação de usuário, reset de senha e logout em `audit_events` (append-only).
 - Seed cria 3 usuários demo no tenant default (senha `demo1234`): `admin@kairon.dev`, `analyst@kairon.dev`, `viewer@kairon.dev`.
 
-**Isolamento multi-tenant é feito na CAMADA DE APLICAÇÃO.** Todo serviço recebe o `tenant_id` do `Principal` e **filtra explicitamente todas as queries por `tenant_id`** (predições, rotas, alertas, idempotência). Há teste e2e que verifica ausência de vazamento cross-tenant.
+**Isolamento multi-tenant tem duas camadas.** (1) Na **aplicação**: todo serviço recebe o `tenant_id` do `Principal` e **filtra explicitamente todas as queries por `tenant_id`** (predições, rotas, alertas, idempotência) — há teste e2e que verifica ausência de vazamento cross-tenant. (2) No **banco**: **RLS ativo** (migration `0005`, `ENABLE + FORCE ROW LEVEL SECURITY` em todas as tabelas `public`).
 
-> **Honestidade sobre RLS:** o **Row-Level Security do Postgres NÃO está ativo** hoje — o isolamento é 100% aplicacional. RLS no banco é **follow-up documentado** (o harness de teste usa `create_all`, não as migrations, então RLS ainda não é parte do fluxo). Até lá, a disciplina de filtrar por `tenant_id` em cada query é a única barreira; tratá-la como invariante de código.
+> **Sobre o RLS:** o objetivo do RLS aqui é **fechar a exposição via PostgREST/anon key do Supabase** (schema `public` sem RLS é lido por qualquer um com a anon key). Com RLS habilitado e **sem policies**, os papéis do PostgREST (`anon`/`authenticated`) veem zero linhas; a API conecta com o papel `postgres` (`BYPASSRLS`), então segue com acesso total. O isolamento **por tenant** continua sendo feito na aplicação (as policies por-tenant no banco são follow-up). Nota: o harness de teste usa `create_all` (não as migrations), então RLS não afeta os testes.
 
 A **idempotência** do `/v1/predict` também é escopada por tenant: `UniqueConstraint(tenant_id, idempotency_key)` na tabela `predictions`.
 
@@ -111,12 +114,16 @@ A **idempotência** do `/v1/predict` também é escopada por tenant: `UniqueCons
 |---------|--------|------|-------------|
 | ops | GET | `/health` `/ready` `/metrics` | público |
 | tenant | POST | `/v1/auth/login` `/v1/auth/refresh` | público / refresh token |
-| tenant | GET | `/v1/auth/me` | Bearer |
-| prediction | POST | `/v1/predict` | `idempotency-key` + `admin\|analyst` (se autenticado); anônimo ok |
-| prediction | GET | `/v1/routes` · `/v1/routes/{id}/history` | qualquer papel |
+| tenant | POST | `/v1/auth/register` | público **se habilitado** (senão `403`) |
+| tenant | POST | `/v1/auth/logout` | Bearer |
+| tenant | GET·PATCH | `/v1/auth/me` | Bearer |
+| tenant | GET·POST·PATCH | `/v1/auth/users`(`/{id}`) | `admin` |
+| tenant | GET·PATCH | `/v1/auth/tenant` | Bearer / `admin` |
+| prediction | POST | `/v1/predict` | `idempotency-key` + `admin\|analyst` |
+| prediction | GET | `/v1/routes` · `/v1/routes/{id}/history` · `/v1/routes/manage` | qualquer papel |
+| prediction | POST·PUT·DELETE | `/v1/routes`(`/{id}`) | `admin\|analyst` |
 | explanation | POST | `/v1/explain` | qualquer papel |
-| simulation | POST | `/v1/simulate` · `/v1/simulate/async` (202) | qualquer papel |
-| simulation | GET | `/v1/simulate/{job_id}` | qualquer papel |
+| simulation | POST | `/v1/simulate` | qualquer papel |
 | alerts | GET | `/v1/alerts` | qualquer papel |
 | alerts | POST | `/v1/alerts/{id}/resolve` | qualquer papel |
 | alerts | POST | `/v1/alerts/detect` | `admin\|analyst` |
@@ -170,6 +177,7 @@ Sem `ANTHROPIC_API_KEY`, o `/v1/explain` degrada para um **template estático** 
 
 ## Observações operacionais
 
-- **Observability:** `structlog` (JSON) + `Sentry` (opcional) + `/health` (liveness, não checa deps), `/ready` (Postgres + Redis obrigatórios; reporta `llm_configured` sem bloquear) e `/metrics` (Prometheus, contadores por path-template para evitar explosão de cardinalidade).
-- **Migrations:** `0001` schema inicial, `0002` users, `0003` alerts; aplicadas no boot do container `api` (`alembic upgrade head`); fora do docker, `make db-migrate`. Nota: o harness de teste usa `create_all`, não as migrations (relevante para o follow-up de RLS acima).
+- **Observability:** `structlog` (JSON) + `Sentry` (opcional) + `/health` (liveness, não checa deps), `/ready` (Postgres obrigatório; reporta `llm_configured` sem bloquear) e `/metrics` (Prometheus, contadores por path-template para evitar explosão de cardinalidade).
+- **Migrations:** `0001` schema inicial · `0002` users · `0003` alerts · `0004` users.name · `0005` RLS (enable+force) · `0006` users.token_version. Aplicadas com `make db-migrate` (`alembic upgrade head`). Nota: o harness de teste usa `create_all`, não as migrations (por isso RLS e defaults de servidor não afetam os testes).
+- **Banco em produção:** Supabase (Postgres gerenciado). A app conecta via pooler (asyncpg + `statement_cache_size=0`); DDL/migrations são aplicadas com a connection string do projeto. Ver ADR-012.
 - **Qualidade:** Ruff (lint+format), mypy strict, pytest com cobertura mínima de 70% — ver [`CONTRIBUTING.md`](./CONTRIBUTING.md).
