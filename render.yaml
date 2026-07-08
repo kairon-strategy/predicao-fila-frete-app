@@ -1,0 +1,43 @@
+# Render Blueprint — provisiona a API FastAPI (Docker) a partir do repo.
+# Uso: Render Dashboard → New → Blueprint → selecionar este repo.
+# Segredos (sync: false) NÃO ficam aqui — são preenchidos no painel do Render.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: kairon-api
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile.api
+    dockerContext: .
+    branch: main
+    # Render não tem região em São Paulo; Ohio (US-East) é a mais próxima do
+    # Supabase (SP). O fix de N+1 no ranking já reduziu as idas ao banco.
+    region: ohio
+    plan: free # troque para "starter" (~US$7/mês) quando precisar sempre-acordado
+    healthCheckPath: /health
+    # Usa a porta que o Render injeta ($PORT), não a 8000 fixa do Dockerfile.
+    dockerCommand: uvicorn kairon.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true # redeploy a cada push na main
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: ALLOW_OPEN_REGISTRATION
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOGIN_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_WINDOW_MIN
+        value: "5"
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      # ---- segredos: definir no painel do Render (não versionados) ----
+      - key: JWT_SECRET
+        sync: false # gerado em deploy-secrets.local.env
+      - key: DATABASE_URL
+        sync: false # Supabase asyncpg pooler (senha nova) — deploy-secrets.local.env
+      - key: CORS_ORIGINS
+        sync: false # URL da Vercel (preencher após deploy do front)
+      - key: ANTHROPIC_API_KEY
+        sync: false # opcional (ativa o copiloto)
+      - key: SENTRY_DSN
+        sync: false # opcional
