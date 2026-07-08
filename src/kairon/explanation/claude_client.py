@@ -6,6 +6,8 @@ service cai no template estático (não crasha). Retry com tenacity em erro tran
 
 from __future__ import annotations
 
+from typing import Protocol, runtime_checkable
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from kairon.core.config import settings
@@ -13,6 +15,16 @@ from kairon.core.exceptions import UpstreamError
 from kairon.core.logging import get_logger
 
 log = get_logger(__name__)
+
+
+@runtime_checkable
+class LLMClient(Protocol):
+    """Contrato comum aos provedores de LLM do copiloto (Claude, OpenAI)."""
+
+    @property
+    def is_enabled(self) -> bool: ...
+
+    async def complete(self, prompt: str) -> str: ...
 
 
 class ClaudeClient:
@@ -55,11 +67,21 @@ class ClaudeClient:
         return "".join(parts).strip()
 
 
-_client: ClaudeClient | None = None
+_client: LLMClient | None = None
 
 
-def get_client() -> ClaudeClient:
+def get_client() -> LLMClient:
+    """Ponto único de acesso ao LLM do copiloto.
+
+    Escolhe o provedor: OpenAI se OPENAI_API_KEY estiver setada, senão Claude
+    (ADR-005/011). Cacheado em módulo — os testes fazem stub de `_client`.
+    """
     global _client
     if _client is None:
-        _client = ClaudeClient()
+        if settings.openai_api_key:
+            from kairon.explanation.openai_client import OpenAIClient
+
+            _client = OpenAIClient()
+        else:
+            _client = ClaudeClient()
     return _client

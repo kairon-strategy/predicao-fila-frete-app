@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     anthropic_max_tokens: int = 1024
 
+    # ---- OpenAI (provedor alternativo do copiloto) ----
+    # Se openai_api_key estiver setada, o copiloto usa OpenAI no lugar do Claude.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.4-mini"
+    openai_max_tokens: int = 1024
+
     # ---- Sentry ----
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.1

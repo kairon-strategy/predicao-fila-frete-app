@@ -1,7 +1,9 @@
-"""Orquestra a explicação: predição -> prompt -> (cache|Claude|template) -> guardrails -> audit.
+"""Orquestra a explicação: predição -> prompt -> (cache|LLM|template) -> guardrails -> audit.
 
-Degrade gracioso: sem ANTHROPIC_API_KEY, gera um texto de template estático
-(determinístico) que também passa pelos guardrails. Nunca crasha por falta de LLM.
+O provedor de LLM é resolvido em `claude_client.get_client()` (OpenAI se
+OPENAI_API_KEY estiver setada, senão Claude). Degrade gracioso: sem nenhuma
+chave, gera um texto de template estático (determinístico) que também passa
+pelos guardrails. Nunca crasha por falta de LLM.
 """
 
 from __future__ import annotations

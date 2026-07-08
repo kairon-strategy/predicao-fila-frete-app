@@ -30,6 +30,8 @@ services:
         value: "5"
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
       # ---- segredos: definir no painel do Render (não versionados) ----
       - key: JWT_SECRET
         sync: false # gerado em deploy-secrets.local.env
@@ -37,7 +39,9 @@ services:
         sync: false # Supabase asyncpg pooler (senha nova) — deploy-secrets.local.env
       - key: CORS_ORIGINS
         value: https://predicao-fila-frete-app.vercel.app # URL do front na Vercel
+      - key: OPENAI_API_KEY
+        sync: false # ativa o copiloto via OpenAI (provedor atual) — usar chave ROTACIONADA
       - key: ANTHROPIC_API_KEY
-        sync: false # opcional (ativa o copiloto)
+        sync: false # opcional — fallback do copiloto (Claude) se OpenAI não estiver setada
       - key: SENTRY_DSN
         sync: false # opcional
