@@ -206,10 +206,14 @@ async def auth_client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     import uuid
 
     from kairon.tenant.auth import DEFAULT_TENANT_ID
+    from kairon.tenant.permissions import ALL_PERMISSIONS
     from kairon.tenant.security import create_access_token
 
     token = create_access_token(
-        user_id=uuid.UUID(int=1), tenant_id=DEFAULT_TENANT_ID, role="admin"
+        user_id=uuid.UUID(int=1),
+        tenant_id=DEFAULT_TENANT_ID,
+        role="admin",
+        permissions=sorted(ALL_PERMISSIONS),
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(

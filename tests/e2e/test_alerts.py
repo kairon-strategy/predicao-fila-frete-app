@@ -82,14 +82,20 @@ async def test_severity_filter(client: httpx.AsyncClient, spiky_diesel: None) ->
 
 
 async def test_alerts_isolated_by_tenant(client: httpx.AsyncClient, spiky_diesel: None) -> None:
+    from kairon.tenant.permissions import ALL_PERMISSIONS
     from kairon.tenant.security import create_access_token
 
     # detecção (admin do tenant default) cria alertas no tenant default
     await client.post("/v1/alerts/detect")
     assert len((await client.get("/v1/alerts")).json()) >= 1
 
-    # token de OUTRO tenant não enxerga os alertas do default
-    other = create_access_token(user_id=uuid.uuid4(), tenant_id=uuid.uuid4(), role="admin")
+    # token de OUTRO tenant (com permissões) não enxerga os alertas do default
+    other = create_access_token(
+        user_id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        role="admin",
+        permissions=sorted(ALL_PERMISSIONS),
+    )
     other_feed = await client.get("/v1/alerts", headers={"Authorization": f"Bearer {other}"})
     assert other_feed.status_code == 200
     assert other_feed.json() == []

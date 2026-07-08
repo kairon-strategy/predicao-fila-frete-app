@@ -11,18 +11,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kairon.core.config import settings
 from kairon.core.database import get_session
 from kairon.core.exceptions import NotFoundError
-from kairon.tenant import ratelimit, service
-from kairon.tenant.auth import Principal, get_principal, require_role
+from kairon.tenant import ratelimit, roles_service, service
+from kairon.tenant.auth import Principal, get_principal, require_permission
 from kairon.tenant.models import User
 from kairon.tenant.schemas import (
+    CreateRoleRequest,
     CreateUserRequest,
     LoginRequest,
     MeResponse,
+    PermissionInfo,
     RefreshRequest,
     RegisterRequest,
+    RoleResponse,
     TenantResponse,
     TokenResponse,
     UpdateMeRequest,
+    UpdateRoleRequest,
     UpdateTenantRequest,
     UpdateUserRequest,
     UserResponse,
@@ -30,8 +34,12 @@ from kairon.tenant.schemas import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Guard de RBAC (singleton de módulo — evita chamada em default de argumento).
-_admin_guard = require_role("admin")
+# Guards de RBAC por permissão (singletons de módulo).
+_users_read = require_permission("users:read")
+_users_write = require_permission("users:write")
+_tenant_write = require_permission("tenant:write")
+_roles_read = require_permission("roles:read")
+_roles_write = require_permission("roles:write")
 
 
 def _client_ip(request: Request) -> str:
@@ -91,10 +99,10 @@ async def logout(
 
 
 # ---- Usuários (CRUD, admin) ----
-@router.get("/users", response_model=list[UserResponse], summary="Lista usuários do tenant (admin)")
+@router.get("/users", response_model=list[UserResponse], summary="Lista usuários do tenant")
 async def list_users(
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(_admin_guard),
+    principal: Principal = Depends(_users_read),
 ) -> list[UserResponse]:
     return await service.list_users(session, principal.tenant_id)
 
@@ -108,7 +116,7 @@ async def list_users(
 async def create_user(
     req: CreateUserRequest,
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(_admin_guard),
+    principal: Principal = Depends(_users_write),
 ) -> UserResponse:
     return await service.create_user(
         session, principal.tenant_id, req.email, req.password, req.role, req.name
@@ -122,7 +130,7 @@ async def update_user(
     user_id: uuid.UUID,
     req: UpdateUserRequest,
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(_admin_guard),
+    principal: Principal = Depends(_users_write),
 ) -> UserResponse:
     return await service.update_user(
         session,
@@ -153,6 +161,7 @@ async def me(
         email=user.email,
         name=user.name,
         role=user.role,
+        permissions=sorted(principal.permissions),
     )
 
 
@@ -176,10 +185,63 @@ async def get_tenant(
     return await service.get_tenant(session, principal.tenant_id)
 
 
-@router.patch("/tenant", response_model=TenantResponse, summary="Edita a empresa (admin)")
+@router.patch("/tenant", response_model=TenantResponse, summary="Edita a empresa (tenant:write)")
 async def update_tenant(
     req: UpdateTenantRequest,
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(_admin_guard),
+    principal: Principal = Depends(_tenant_write),
 ) -> TenantResponse:
     return await service.update_tenant(session, principal.tenant_id, req.name)
+
+
+# ---- Perfis & permissões (RBAC dinâmico) ----
+@router.get(
+    "/permissions", response_model=list[PermissionInfo], summary="Catálogo de permissões"
+)
+async def list_permissions(
+    _p: Principal = Depends(_roles_read),
+) -> list[PermissionInfo]:
+    return [PermissionInfo(**p) for p in roles_service.permission_catalog()]
+
+
+@router.get("/roles", response_model=list[RoleResponse], summary="Lista perfis do tenant")
+async def list_roles(
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_roles_read),
+) -> list[RoleResponse]:
+    return [RoleResponse(**r) for r in await roles_service.list_roles(session, principal.tenant_id)]
+
+
+@router.post("/roles", response_model=RoleResponse, status_code=201, summary="Cria perfil")
+async def create_role(
+    req: CreateRoleRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_roles_write),
+) -> RoleResponse:
+    return RoleResponse(
+        **await roles_service.create_role(session, principal.tenant_id, req.name, req.permissions)
+    )
+
+
+@router.patch("/roles/{role_id}", response_model=RoleResponse, summary="Edita perfil/permissões")
+async def update_role(
+    role_id: uuid.UUID,
+    req: UpdateRoleRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_roles_write),
+) -> RoleResponse:
+    return RoleResponse(
+        **await roles_service.update_role(
+            session, principal.tenant_id, role_id, name=req.name, permissions=req.permissions
+        )
+    )
+
+
+@router.delete("/roles/{role_id}", status_code=204, summary="Exclui perfil (não-sistema)")
+async def delete_role(
+    role_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(_roles_write),
+) -> Response:
+    await roles_service.delete_role(session, principal.tenant_id, role_id)
+    return Response(status_code=204)

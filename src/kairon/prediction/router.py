@@ -17,13 +17,14 @@ from kairon.prediction.schemas import (
     RouteResponse,
     RouteWrite,
 )
-from kairon.tenant.auth import Principal, get_principal, require_role
+from kairon.tenant.auth import Principal, require_permission
 
 router = APIRouter()
 
-# Guard de RBAC como singleton de módulo (evita chamada em default de argumento).
-_predict_guard = require_role("admin", "analyst")
-_write_guard = require_role("admin", "analyst")
+# Guards de RBAC por permissão (singletons de módulo).
+_predict_guard = require_permission("predict:run")
+_write_guard = require_permission("routes:write")
+_read_guard = require_permission("routes:read")
 
 
 @router.post("/predict", response_model=PredictResponse, summary="Prevê frete R$/tonelada")
@@ -37,7 +38,7 @@ async def predict_endpoint(
         max_length=128,
     ),
     session: AsyncSession = Depends(get_session),
-    # RBAC (US-006): admin/analyst preveem; viewer só lê ranking. Anônimo = admin (MVP).
+    # RBAC dinâmico: exige a permissão predict:run (perfil configurável por tenant).
     principal: Principal = Depends(_predict_guard),
 ) -> PredictResponse:
     return await service.predict(
@@ -50,7 +51,7 @@ async def list_routes(
     produto: str | None = Query(default=None, description="Filtra por produto"),
     corredor: str | None = Query(default=None, description="Filtra por corredor"),
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(_read_guard),
 ) -> list[RouteRankingItem]:
     return await ranking.rank_routes(
         session, tenant_id=principal.tenant_id, produto=produto, corredor=corredor
@@ -66,7 +67,7 @@ async def route_history(
     route_id: str,
     months: int = Query(default=12, ge=1, le=36),
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(_read_guard),
 ) -> RouteHistoryResponse:
     return await ranking.route_history(
         session, route_id, tenant_id=principal.tenant_id, months=months
@@ -77,7 +78,7 @@ async def route_history(
 @router.get("/routes/manage", response_model=list[RouteResponse], summary="Lista rotas (gestão)")
 async def manage_list_routes(
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(_read_guard),
 ) -> list[RouteResponse]:
     return await routes_crud.list_routes(session, principal.tenant_id)
 

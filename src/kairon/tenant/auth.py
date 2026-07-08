@@ -4,7 +4,8 @@
 - `get_principal`: extrai do JWT. Sem token OU token inválido -> 401
   (autenticação é obrigatória em todo endpoint protegido; /health, login e
   register são públicos por não dependerem deste dependency).
-- `require_role`: RBAC (admin | analyst | viewer) sobre um principal autenticado.
+- `require_permission`: RBAC dinâmico — exige uma chave de permissão (vinda do
+  perfil do usuário, embutida no JWT). `require_role` fica como legado.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ class Principal:
     role: str
     user_id: uuid.UUID | None = None
     authenticated: bool = False
+    permissions: frozenset[str] = frozenset()
 
 
 async def get_principal(authorization: str | None = Header(default=None)) -> Principal:
@@ -56,11 +58,30 @@ async def get_principal(authorization: str | None = Header(default=None)) -> Pri
         role=payload.get("role", "viewer"),
         user_id=user_id,
         authenticated=True,
+        permissions=frozenset(payload.get("perms", [])),
     )
 
 
+def require_permission(*required: str):  # type: ignore[no-untyped-def]
+    """Dependency factory de RBAC dinâmico. Ex: Depends(require_permission('routes:write')).
+
+    Exige TODAS as chaves informadas (AND). Nega com 403 se faltar alguma.
+    """
+
+    async def _checker(principal: Principal = Depends(get_principal)) -> Principal:
+        missing = [k for k in required if k not in principal.permissions]
+        if missing:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"permissão negada (requer: {', '.join(required)})",
+            )
+        return principal
+
+    return _checker
+
+
 def require_role(*allowed: str):  # type: ignore[no-untyped-def]
-    """Dependency factory de RBAC. Ex: Depends(require_role('admin', 'analyst'))."""
+    """Legado (RBAC por papel). Mantido para compat; endpoints usam require_permission."""
 
     async def _checker(principal: Principal = Depends(get_principal)) -> Principal:
         if principal.role not in allowed:

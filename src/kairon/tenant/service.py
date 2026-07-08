@@ -10,8 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kairon.audit import writer as audit
 from kairon.core.exceptions import KaironError, NotFoundError, ValidationError
 from kairon.core.logging import get_logger
-from kairon.tenant import security
-from kairon.tenant.auth import ROLES
+from kairon.tenant import roles_service, security
 from kairon.tenant.models import Tenant, User
 from kairon.tenant.schemas import TenantResponse, TokenResponse, UserResponse
 
@@ -58,8 +57,13 @@ async def login(session: AsyncSession, email: str, password: str) -> TokenRespon
         payload={"role": user.role},
         tenant_id=user.tenant_id,
     )
+    perms = await roles_service.permissions_for_role(session, user.tenant_id, user.role)
     return _issue_tokens(
-        user_id=user.id, tenant_id=user.tenant_id, role=user.role, token_version=user.token_version
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+        token_version=user.token_version,
+        permissions=perms,
     )
 
 
@@ -79,20 +83,39 @@ async def refresh(session: AsyncSession, refresh_token: str) -> TokenResponse:
     if payload.get("tv") != user.token_version:
         raise AuthError("sessão revogada; faça login novamente")
 
+    # Re-resolve as permissões (mudanças de perfil valem a partir daqui).
+    perms = await roles_service.permissions_for_role(session, user.tenant_id, user.role)
     return _issue_tokens(
-        user_id=user.id, tenant_id=user.tenant_id, role=user.role, token_version=user.token_version
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+        token_version=user.token_version,
+        permissions=perms,
     )
 
 
 def _issue_tokens(
-    *, user_id: uuid.UUID, tenant_id: uuid.UUID, role: str, token_version: int
+    *,
+    user_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    role: str,
+    token_version: int,
+    permissions: list[str],
 ) -> TokenResponse:
     return TokenResponse(
         access_token=security.create_access_token(
-            user_id=user_id, tenant_id=tenant_id, role=role, token_version=token_version
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role=role,
+            token_version=token_version,
+            permissions=permissions,
         ),
         refresh_token=security.create_refresh_token(
-            user_id=user_id, tenant_id=tenant_id, role=role, token_version=token_version
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role=role,
+            token_version=token_version,
+            permissions=permissions,
         ),
     )
 
@@ -129,6 +152,7 @@ async def register(
     tenant = Tenant(id=uuid.uuid4(), name=tenant_name.strip(), slug=_slug(tenant_name))
     session.add(tenant)
     await session.flush()  # garante tenant antes do FK do user
+    await roles_service.ensure_default_roles(session, tenant.id)  # 3 perfis padrão
 
     user = User(
         tenant_id=tenant.id,
@@ -147,8 +171,13 @@ async def register(
         payload={"tenant": tenant.name},
         tenant_id=tenant.id,
     )
+    perms = await roles_service.permissions_for_role(session, tenant.id, "admin")
     return _issue_tokens(
-        user_id=user.id, tenant_id=tenant.id, role="admin", token_version=user.token_version
+        user_id=user.id,
+        tenant_id=tenant.id,
+        role="admin",
+        token_version=user.token_version,
+        permissions=perms,
     )
 
 
@@ -161,8 +190,9 @@ async def create_user(
     name: str | None = None,
 ) -> UserResponse:
     """Admin cria um usuário no PRÓPRIO tenant (US-002)."""
-    if role not in ROLES:
-        raise ValidationError(f"papel inválido: {role} (use {', '.join(ROLES)})")
+    await roles_service.ensure_default_roles(session, tenant_id)
+    if not await roles_service.role_exists(session, tenant_id, role):
+        raise ValidationError(f"perfil inválido: {role}")
     email = email.strip().lower()
     if await _get_user_by_email(session, email) is not None:
         raise ConflictError("já existe um usuário com esse email")
@@ -217,9 +247,10 @@ async def update_user(
         raise NotFoundError("usuário não encontrado")
     revoke = False
     if role is not None:
-        if role not in ROLES:
-            raise ValidationError(f"papel inválido: {role} (use {', '.join(ROLES)})")
+        if not await roles_service.role_exists(session, tenant_id, role):
+            raise ValidationError(f"perfil inválido: {role}")
         user.role = role
+        revoke = True  # muda o perfil -> revoga sessões p/ novas permissões valerem já
     if is_active is not None:
         user.is_active = is_active
         if not is_active:

@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from kairon.simulation.monte_carlo import SENSITIVITY, run_monte_carlo, simulate_segment
-from kairon.tenant.auth import Principal, get_principal
+from kairon.tenant.auth import Principal, require_permission
 
 router = APIRouter()
+
+_sim_guard = require_permission("simulate:run")
 
 
 class SimulateRequest(BaseModel):
@@ -32,7 +34,7 @@ class SimulateResponse(BaseModel):
 @router.post("/simulate", response_model=SimulateResponse, summary="Monte Carlo de frete (MVP)")
 async def simulate_endpoint(
     request: SimulateRequest,
-    _p: Principal = Depends(get_principal),
+    _p: Principal = Depends(_sim_guard),
 ) -> SimulateResponse:
     result = run_monte_carlo(request.base_freight, iterations=request.iterations)
     return SimulateResponse(
@@ -87,7 +89,7 @@ _DEFAULT_BASES = {"fertilizante": 320.0, "algodão": 280.0, "grão": 300.0}
 )
 async def simulate_segments_endpoint(
     request: SimulateSegmentsRequest,
-    _p: Principal = Depends(get_principal),
+    _p: Principal = Depends(_sim_guard),
 ) -> SimulateSegmentsResponse:
     bases = {b.segment: b.base_freight for b in request.bases}
     results: list[SegmentResult] = []

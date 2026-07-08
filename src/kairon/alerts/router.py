@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kairon.alerts import service
 from kairon.alerts.schemas import AlertResponse, DetectResponse
 from kairon.core.database import get_session
-from kairon.tenant.auth import Principal, get_principal, require_role
+from kairon.tenant.auth import Principal, require_permission
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-# Detecção é uma ação de escrita: admin/analyst apenas (US-006).
-_detect_guard = require_role("admin", "analyst")
+_read_guard = require_permission("alerts:read")
+_resolve_guard = require_permission("alerts:resolve")
+_detect_guard = require_permission("alerts:detect")
 
 
 @router.get("", response_model=list[AlertResponse], summary="Feed de alertas do tenant (US-051)")
@@ -22,7 +23,7 @@ async def list_alerts(
     alert_type: str | None = Query(default=None, alias="type"),
     status: str = Query(default="active", description="active | resolved"),
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(_read_guard),
 ) -> list[AlertResponse]:
     alerts = await service.list_alerts(
         session, principal.tenant_id, severity=severity, alert_type=alert_type, status=status
@@ -34,7 +35,7 @@ async def list_alerts(
 async def resolve_alert(
     alert_id: int,
     session: AsyncSession = Depends(get_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(_resolve_guard),
 ) -> AlertResponse:
     alert = await service.resolve_alert(session, principal.tenant_id, alert_id)
     return AlertResponse.model_validate(alert)

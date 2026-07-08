@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
-# Papéis válidos de RBAC. Validado na borda (schema) e no service.
-Role = Literal["admin", "analyst", "viewer"]
+# Perfil é um slug dinâmico (RBAC configurável por tenant); validado no service
+# contra os perfis existentes do tenant.
 
 
 class LoginRequest(BaseModel):
@@ -34,14 +32,14 @@ class CreateUserRequest(BaseModel):
 
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=8, max_length=200)
-    role: Role = Field(default="viewer")
+    role: str = Field(default="viewer", max_length=50)
     name: str | None = Field(default=None, max_length=120)
 
 
 class UpdateUserRequest(BaseModel):
     """Admin edita papel/ativação e/ou reseta a senha de um usuário do tenant."""
 
-    role: Role | None = Field(default=None)
+    role: str | None = Field(default=None, max_length=50)
     is_active: bool | None = Field(default=None)
     password: str | None = Field(default=None, min_length=8, max_length=200)
 
@@ -86,3 +84,30 @@ class MeResponse(BaseModel):
     email: str
     name: str | None
     role: str
+    permissions: list[str] = Field(default_factory=list)
+
+
+# ---- Perfis & permissões (RBAC dinâmico) ----
+class PermissionInfo(BaseModel):
+    key: str
+    group: str
+    label: str
+
+
+class RoleResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    is_system: bool
+    permissions: list[str]
+    user_count: int
+
+
+class CreateRoleRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    permissions: list[str] = Field(default_factory=list)
+
+
+class UpdateRoleRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    permissions: list[str] | None = Field(default=None)
