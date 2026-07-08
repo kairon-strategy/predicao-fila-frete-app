@@ -8,6 +8,7 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  Download,
   Minus,
   Route as RouteIcon,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { FreightAreaChart } from "@/components/charts/freight-area-chart";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +39,7 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import type { RouteRankingItem, RouteHistory, RouteHistoryPoint } from "@/lib/api";
+import { csvNum, downloadCsv } from "@/lib/csv";
 import { brl, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -156,6 +159,25 @@ export default function PrevisaoPage() {
 
   const selectedRoute = routes?.find((r) => r.route_id === selectedRouteId);
 
+  function exportCsv() {
+    if (!selectedRoute || points.length === 0) {
+      toast.error("Selecione uma rota com série disponível.");
+      return;
+    }
+    const rows = points.map((p) => [
+      p.month,
+      csvNum(p.frete_r_per_ton),
+      csvNum(p.banda_p10),
+      csvNum(p.banda_p90),
+    ]);
+    downloadCsv(
+      `previsao_${selectedRoute.origem}_${selectedRoute.destino}`.replace(/\s+/g, "-"),
+      ["Mes", "Frete_R$/t", "P10_R$/t", "P90_R$/t"],
+      rows,
+    );
+    toast.success("CSV exportado.");
+  }
+
   const routeSelect = (
     <Select
       value={selectedRouteId}
@@ -185,7 +207,12 @@ export default function PrevisaoPage() {
         title="Previsão 12 meses"
         subtitle="Série mensal com banda de incerteza · janela de contrato"
       >
-        {routeSelect}
+        <div className="flex items-center gap-2">
+          {routeSelect}
+          <Button variant="outline" onClick={exportCsv} disabled={!selectedRoute || points.length === 0}>
+            <Download className="size-4" /> Exportar CSV
+          </Button>
+        </div>
       </PageHeader>
 
       {noRoutes ? (

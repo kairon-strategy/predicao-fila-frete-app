@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Dices, Droplet, Play, Scale, Sparkles, Wheat } from "lucide-react";
+import { Dices, Download, Droplet, Play, Scale, Sparkles, Wheat } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { ApiError, api, type SimulateSegmentsResponse } from "@/lib/api";
+import { csvNum, downloadCsv } from "@/lib/csv";
 import { brl, num } from "@/lib/format";
 
 const GOLD = "#c5a572";
@@ -213,6 +214,29 @@ export default function SimulacaoPage() {
                   <Badge variant="secondary" className="text-muted-foreground">
                     {num(result.iterations, 0)} iterações
                   </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      downloadCsv(
+                        `simulacao_diesel${diesel}_safra${safra}_piso${piso}`,
+                        ["Segmento", "Base_R$/t", "Media_R$/t", "P10", "P50", "P90", "Delta_%"],
+                        result.segments.map((s) => [
+                          SEG_LABEL[s.segment] ?? s.segment,
+                          csvNum(s.base_freight),
+                          csvNum(s.mean),
+                          csvNum(s.p10),
+                          csvNum(s.p50),
+                          csvNum(s.p90),
+                          csvNum(s.delta_pct, 1),
+                        ]),
+                      );
+                      toast.success("CSV exportado.");
+                    }}
+                  >
+                    <Download className="size-4" /> Exportar CSV
+                  </Button>
                 </div>
 
                 {/* cards por segmento */}
