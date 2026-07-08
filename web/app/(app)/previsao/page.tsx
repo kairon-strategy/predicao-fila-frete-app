@@ -144,7 +144,7 @@ export default function PrevisaoPage() {
   const chartData = useMemo(
     () =>
       points.map((p) => ({
-        label: formatMonth(p.month),
+        month: p.month,
         value: p.frete_r_per_ton,
         low: p.banda_p10,
         high: p.banda_p90,

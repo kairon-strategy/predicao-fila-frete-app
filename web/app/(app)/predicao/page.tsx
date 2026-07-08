@@ -314,13 +314,11 @@ export default function PredicaoPage() {
 
   const previsaoData = useMemo(() => {
     const pts = history?.points ?? [];
-    const dist = selectedRoute?.distancia_km ?? 0;
-    if (!dist) return [];
     return pts.map((p) => ({
       label: formatMonth(p.month),
-      previsto: Number((p.frete_r_per_ton / dist).toFixed(4)),
+      previsto: Number(p.frete_r_per_ton.toFixed(2)), // R$/tonelada
     }));
-  }, [history, selectedRoute]);
+  }, [history]);
 
   const previsaoMean = useMemo(() => {
     if (!previsaoData.length) return 0;
@@ -674,7 +672,7 @@ export default function PredicaoPage() {
                 <TabsContent value="previsao" className="mt-4">
                   <div className="mb-3">
                     <h3 className="text-sm font-semibold">
-                      Evolução da tarifa (R$/km) —{" "}
+                      Evolução do frete (R$/tonelada) —{" "}
                       {selectedRoute
                         ? `${selectedRoute.origem} → ${selectedRoute.destino}`
                         : "—"}
@@ -712,14 +710,14 @@ export default function PredicaoPage() {
                             tick={{ fill: "rgba(150,150,160,0.8)", fontSize: 11 }}
                             tickLine={false}
                             axisLine={false}
-                            width={48}
-                            tickFormatter={(v) => num(Number(v), 2)}
+                            width={52}
+                            tickFormatter={(v) => `${Math.round(Number(v))}`}
                           />
                           <Tooltip
                             contentStyle={TOOLTIP_STYLE}
                             labelStyle={{ color: GOLD }}
                             formatter={(value, name) => [
-                              `R$ ${num(Number(value), 3)}/km`,
+                              brl(Number(value)),
                               name === "media" ? "Média histórica" : "Previsto",
                             ]}
                           />
@@ -748,8 +746,7 @@ export default function PredicaoPage() {
                         </LineChart>
                       </ResponsiveContainer>
                       <p className="mt-2 text-xs italic text-muted-foreground">
-                        Linha tracejada = média histórica de referência ({num(previsaoMean, 3)}{" "}
-                        R$/km).
+                        Linha tracejada = média histórica de referência ({brl(previsaoMean)}).
                       </p>
                     </motion.div>
                   )}
