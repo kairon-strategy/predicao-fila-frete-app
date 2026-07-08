@@ -64,3 +64,6 @@ infra/terraform/.terraform.lock.hcl
 
 # Config do editor (MCP local — evita vazar token em repo público)
 .cursor/
+deploy-secrets.local.env
+CREDENTIALS.local.md
+*.local.md
