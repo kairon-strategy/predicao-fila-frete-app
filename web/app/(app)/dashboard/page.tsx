@@ -2,9 +2,11 @@
 
 import { AlertTriangle, ArrowRight, Bell, Info, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import useSWR from "swr";
 
 import { FreightAreaChart } from "@/components/charts/freight-area-chart";
+import { SegmentFilter } from "@/components/segment-filter";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { brl, num, pct } from "@/lib/format";
+import { segmentOf } from "@/lib/segments";
 
 function firstNameFromEmail(email?: string): string {
   if (!email) return "";
@@ -30,8 +33,12 @@ const sevTone: Record<string, string> = {
 export default function DashboardPage() {
   const { user } = useAuth();
   const nome = user?.name ? user.name.split(" ")[0] : firstNameFromEmail(user?.email);
-  const { data: routes, isLoading: loadingRoutes } = useSWR("routes", () => api.getRoutes());
+  const { data: allRoutes, isLoading: loadingRoutes } = useSWR("routes", () => api.getRoutes());
   const { data: alerts } = useSWR("alerts-active", () => api.getAlerts());
+  const [seg, setSeg] = useState("");
+
+  // filtro por commodity (Todos = "")
+  const routes = seg ? (allRoutes ?? []).filter((r) => segmentOf(r.produto) === seg) : allRoutes;
 
   const top = routes && routes.length ? [...routes].sort((a, b) => b.frete_r_per_ton - a.frete_r_per_ton) : [];
   const featured = top[0];
@@ -55,6 +62,11 @@ export default function DashboardPage() {
           <Link href="/consulta">Nova consulta <ArrowRight className="size-4" /></Link>
         </Button>
       </PageHeader>
+
+      {/* Filtro por commodity */}
+      <div className="mb-5">
+        <SegmentFilter value={seg} onChange={setSeg} />
+      </div>
 
       {/* KPIs */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

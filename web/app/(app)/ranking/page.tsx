@@ -6,6 +6,7 @@ import useSWR from "swr";
 
 import { FreightAreaChart } from "@/components/charts/freight-area-chart";
 import { PageHeader } from "@/components/page-header";
+import { SegmentFilter } from "@/components/segment-filter";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { api, type RouteRankingItem } from "@/lib/api";
 import { brl, num, pct } from "@/lib/format";
+import { segmentOf } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 
 const PRODUTOS = ["Todos", "ureia", "MAP", "KCl", "NPK", "algodão"];
@@ -42,9 +44,13 @@ export default function RankingPage() {
   const [corredor, setCorredor] = useState("");
   const [selected, setSelected] = useState<RouteRankingItem | null>(null);
 
-  const { data: routes, isLoading } = useSWR(["routes", produto, corredor], () =>
+  const [seg, setSeg] = useState("");
+
+  const { data: allRoutes, isLoading } = useSWR(["routes", produto, corredor], () =>
     api.getRoutes(produto === "Todos" ? undefined : produto, corredor || undefined),
   );
+  // filtro por commodity (client-side, compõe com produto/corredor)
+  const routes = seg ? (allRoutes ?? []).filter((r) => segmentOf(r.produto) === seg) : allRoutes;
 
   const biggestRise = routes?.length
     ? [...routes].sort((a, b) => b.var_30d_pct - a.var_30d_pct)[0]
@@ -63,6 +69,11 @@ export default function RankingPage() {
           {routes?.length ?? 0} rotas
         </Badge>
       </PageHeader>
+
+      {/* Filtro por commodity */}
+      <div className="mb-5">
+        <SegmentFilter value={seg} onChange={setSeg} />
+      </div>
 
       {/* Summary cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
