@@ -128,6 +128,16 @@ export type Me = {
   email: string;
   name: string | null;
   role: string;
+  permissions: string[];
+};
+export type PermissionInfo = { key: string; group: string; label: string };
+export type RoleRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  is_system: boolean;
+  permissions: string[];
+  user_count: number;
 };
 export type UserResponse = {
   id: string;
@@ -285,6 +295,15 @@ export const api = {
   getTenant: () => request<TenantResponse>("/v1/auth/tenant"),
   updateTenant: (name: string) =>
     request<TenantResponse>("/v1/auth/tenant", { method: "PATCH", body: { name } }),
+
+  // perfis & permissões (RBAC dinâmico)
+  listPermissions: () => request<PermissionInfo[]>("/v1/auth/permissions"),
+  listRoles: () => request<RoleRecord[]>("/v1/auth/roles"),
+  createRole: (name: string, permissions: string[]) =>
+    request<RoleRecord>("/v1/auth/roles", { method: "POST", body: { name, permissions } }),
+  updateRole: (id: string, patch: { name?: string; permissions?: string[] }) =>
+    request<RoleRecord>(`/v1/auth/roles/${id}`, { method: "PATCH", body: patch }),
+  deleteRole: (id: string) => request<void>(`/v1/auth/roles/${id}`, { method: "DELETE" }),
 
   // CRUD de rotas (gestão)
   listRoutesManage: () => request<RouteRecord[]>("/v1/routes/manage"),

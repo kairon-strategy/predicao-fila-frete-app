@@ -2,11 +2,15 @@
 
 import {
   Building2,
+  KeyRound,
   Loader2,
   Lock,
+  Pencil,
   Plus,
   Save,
   ShieldAlert,
+  ShieldCheck,
+  Trash2,
   UserCog,
   Users2,
 } from "lucide-react";
@@ -50,15 +54,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   api,
   ApiError,
+  type PermissionInfo,
+  type RoleRecord,
   type TenantResponse,
   type UserResponse,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-const ROLES = ["admin", "analyst", "viewer"] as const;
-type Role = (typeof ROLES)[number];
-
+// Rótulos amigáveis de fallback p/ os perfis de sistema (o nome real vem da API).
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
   analyst: "Analista",
@@ -289,8 +293,9 @@ function NovoUsuarioDialog() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [role, setRole] = useState<Role>("viewer");
+  const [role, setRole] = useState("viewer");
   const [saving, setSaving] = useState(false);
+  const { data: roles } = useSWR("roles", () => api.listRoles());
 
   function reset() {
     setNome("");
@@ -378,15 +383,15 @@ function NovoUsuarioDialog() {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="novo-papel">Papel</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+            <Label htmlFor="novo-papel">Perfil</Label>
+            <Select value={role} onValueChange={setRole}>
               <SelectTrigger id="novo-papel" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {ROLE_LABEL[r]}
+                {(roles ?? []).map((r) => (
+                  <SelectItem key={r.slug} value={r.slug}>
+                    {r.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -417,6 +422,7 @@ function UserRow({ u, currentUserId }: { u: UserResponse; currentUserId?: string
   const [resetOpen, setResetOpen] = useState(false);
   const [novaSenha, setNovaSenha] = useState("");
   const [busyReset, setBusyReset] = useState(false);
+  const { data: roles } = useSWR("roles", () => api.listRoles());
   const isSelf = u.id === currentUserId;
 
   async function resetSenha() {
@@ -470,13 +476,13 @@ function UserRow({ u, currentUserId }: { u: UserResponse; currentUserId?: string
       <TableCell className="text-muted-foreground">{u.email}</TableCell>
       <TableCell>
         <Select value={u.role} onValueChange={changeRole} disabled={busyRole || isSelf}>
-          <SelectTrigger className="h-8 w-36">
-            <SelectValue />
+          <SelectTrigger className="h-8 w-40">
+            <SelectValue placeholder={ROLE_LABEL[u.role] ?? u.role} />
           </SelectTrigger>
           <SelectContent>
-            {ROLES.map((r) => (
-              <SelectItem key={r} value={r}>
-                {ROLE_LABEL[r]}
+            {(roles ?? []).map((r) => (
+              <SelectItem key={r.slug} value={r.slug}>
+                {r.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -624,6 +630,234 @@ function UsuariosTab({ isAdmin, currentUserId }: { isAdmin: boolean; currentUser
   );
 }
 
+/* ----------------------------- Perfis & Permissões ----------------------------- */
+
+function PerfisTab({ isAdmin }: { isAdmin: boolean }) {
+  const { data: roles, isLoading } = useSWR("roles", () => api.listRoles());
+  const { data: catalog } = useSWR("permissions", () => api.listPermissions());
+  const [dialogRole, setDialogRole] = useState<RoleRecord | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  if (!isAdmin) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+          <ShieldAlert className="size-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Você não tem permissão para gerenciar perfis.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  async function handleDelete(r: RoleRecord) {
+    if (!window.confirm(`Excluir o perfil "${r.name}"?`)) return;
+    try {
+      await api.deleteRole(r.id);
+      await mutate("roles");
+      toast.success("Perfil excluído.");
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao excluir perfil."));
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="size-5 text-gold" /> Perfis & Permissões
+          </CardTitle>
+          <CardDescription>Defina o que cada perfil pode fazer.</CardDescription>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <Plus className="size-4" /> Novo perfil
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Perfil</TableHead>
+                <TableHead>Permissões</TableHead>
+                <TableHead>Usuários</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(roles ?? []).map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-medium">
+                    {r.name}
+                    {r.is_system && (
+                      <Badge variant="secondary" className="ml-2 text-[10px]">
+                        sistema
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {r.permissions.length} de {catalog?.length ?? 14}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{r.user_count}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setDialogRole(r)}>
+                        <Pencil className="size-4" /> Editar
+                      </Button>
+                      {!r.is_system && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => handleDelete(r)}
+                          aria-label={`Excluir ${r.name}`}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      {(creating || dialogRole) && catalog && (
+        <RoleDialog
+          role={dialogRole}
+          catalog={catalog}
+          onClose={() => {
+            setCreating(false);
+            setDialogRole(null);
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function RoleDialog({
+  role,
+  catalog,
+  onClose,
+}: {
+  role: RoleRecord | null;
+  catalog: PermissionInfo[];
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(role?.name ?? "");
+  const [perms, setPerms] = useState<Set<string>>(new Set(role?.permissions ?? []));
+  const [saving, setSaving] = useState(false);
+  const isSystem = role?.is_system ?? false;
+
+  // agrupa o catálogo por área, mantendo a ordem de aparição
+  const groups: { name: string; items: PermissionInfo[] }[] = [];
+  for (const p of catalog) {
+    let g = groups.find((x) => x.name === p.group);
+    if (!g) {
+      g = { name: p.group, items: [] };
+      groups.push(g);
+    }
+    g.items.push(p);
+  }
+
+  function toggle(key: string) {
+    setPerms((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function save() {
+    if (name.trim().length < 2) {
+      toast.error("Informe um nome para o perfil.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (role) {
+        await api.updateRole(role.id, { name: name.trim(), permissions: [...perms] });
+      } else {
+        await api.createRole(name.trim(), [...perms]);
+      }
+      await mutate("roles");
+      toast.success(role ? "Perfil atualizado." : "Perfil criado.");
+      onClose();
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao salvar perfil."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>{role ? `Editar: ${role.name}` : "Novo perfil"}</DialogTitle>
+          <DialogDescription>
+            {isSystem
+              ? "Perfil de sistema: nome fixo, permissões editáveis."
+              : "Defina o nome e marque as permissões."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="role-name">Nome do perfil</Label>
+            <Input
+              id="role-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isSystem}
+              placeholder="Ex.: Operador de logística"
+            />
+          </div>
+          <div className="space-y-4">
+            {groups.map((g) => (
+              <div key={g.name}>
+                <div className="mb-1.5 text-[11px] uppercase tracking-[0.14em] text-gold">
+                  {g.name}
+                </div>
+                <div className="grid gap-1.5">
+                  {g.items.map((p) => (
+                    <label
+                      key={p.key}
+                      className="flex cursor-pointer items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[var(--gold)]"
+                        checked={perms.has(p.key)}
+                        onChange={() => toggle(p.key)}
+                      />
+                      {p.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ----------------------------- Page ----------------------------- */
 
 export default function ConfiguracoesPage() {
@@ -649,6 +883,12 @@ export default function ConfiguracoesPage() {
             {isAdmin ? <Users2 className="size-4" /> : <ShieldAlert className="size-4" />}
             Usuários
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="perfis">
+              <KeyRound className="size-4" />
+              Perfis
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {tab === "perfil" && <PerfilTab />}
@@ -656,6 +896,7 @@ export default function ConfiguracoesPage() {
         {tab === "usuarios" && (
           <UsuariosTab isAdmin={!!isAdmin} currentUserId={user?.user_id} />
         )}
+        {tab === "perfis" && <PerfisTab isAdmin={!!isAdmin} />}
       </Tabs>
     </>
   );
