@@ -33,7 +33,12 @@ class ClaudeClient:
         if settings.anthropic_api_key:
             from anthropic import AsyncAnthropic
 
-            self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+            # Timeout duro; retry do SDK desligado (usamos tenacity). Ver §7.
+            self._client = AsyncAnthropic(
+                api_key=settings.anthropic_api_key,
+                timeout=float(settings.llm_timeout_seconds),
+                max_retries=0,
+            )
 
     @property
     def is_enabled(self) -> bool:

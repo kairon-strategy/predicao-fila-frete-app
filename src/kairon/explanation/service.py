@@ -18,7 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kairon.audit.writer import write_event
-from kairon.core.exceptions import NotFoundError, UpstreamError
+from kairon.core.config import settings
+from kairon.core.exceptions import GuardrailViolation, NotFoundError, UpstreamError
 from kairon.core.logging import get_logger
 from kairon.explanation import guardrails
 from kairon.explanation.claude_client import get_client
@@ -92,8 +93,23 @@ async def explain(
     if pred is None:
         raise NotFoundError(f"predição {prediction_id} não encontrada")
 
-    # Sanitiza input livre do usuário antes de montar o prompt (anti prompt-injection).
-    clean_question = guardrails.sanitize_input(question) if question else None
+    # Sanitiza input livre: cap de tamanho (custo/abuso), redação de PII (LGPD) e
+    # anti prompt-injection. Ver docs/GOVERNANCA_IA.md §4/§6.
+    clean_question: str | None = None
+    if question:
+        capped = question[: settings.llm_max_input_chars]
+        pii_types = guardrails.scan_pii(capped)
+        clean_question = guardrails.sanitize_input(capped)
+        if pii_types:
+            # Observabilidade LGPD: registra o TIPO de PII redigida, nunca o valor.
+            log.info("explanation.pii_redacted", prediction_id=prediction_id, types=sorted(set(pii_types)))
+            await write_event(
+                session,
+                event_type="explanation.pii_redacted",
+                entity_id=str(pred.id),
+                payload={"types": sorted(set(pii_types)), "prediction_id": str(pred.id)},
+                tenant_id=pred.tenant_id,
+            )
     prompt = _render_prompt(pred, clean_question)
     prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
@@ -117,25 +133,34 @@ async def explain(
             prediction_id=prediction_id, explanation=cached.explanation, source=cached.source
         )
 
-    # ---- gera (Claude ou template) ----
+    # ---- gera (LLM com guardrail de saída, senão template) ----
+    allowed = [pred.frete_r_per_ton, pred.banda_p10, pred.banda_p90]
     client = get_client()
+    explanation: str | None = None
     source = "template"
+
     if client.is_enabled:
         try:
-            raw = await client.complete(prompt)
-            source = "llm"
+            candidate = await client.complete(prompt)
+            if candidate.strip():
+                # Valida a saída do LLM ANTES de aceitar. Se violar, cai no template.
+                explanation = guardrails.enforce_output(
+                    candidate, allowed_values=allowed, origem=pred.origem, destino=pred.destino
+                )
+                source = "llm"
         except UpstreamError:
-            raw = _static_explanation(pred, clean_question)
-    else:
-        raw = _static_explanation(pred)
+            log.warning("explanation.llm_upstream_error", prediction_id=prediction_id)
+        except GuardrailViolation:
+            # Saída do LLM reprovada no guardrail → degrada para template (não 500).
+            log.warning("explanation.guardrail_fallback", prediction_id=prediction_id)
 
-    # ---- guardrails (ANTES de devolver / cachear) ----
-    explanation = guardrails.enforce_output(
-        raw,
-        allowed_values=[pred.frete_r_per_ton, pred.banda_p10, pred.banda_p90],
-        origem=pred.origem,
-        destino=pred.destino,
-    )
+    if explanation is None:
+        # Fallback determinístico — também passa pelo guardrail (defesa em profundidade).
+        raw = _static_explanation(pred, clean_question)
+        explanation = guardrails.enforce_output(
+            raw, allowed_values=allowed, origem=pred.origem, destino=pred.destino
+        )
+        source = "template"
 
     # ---- cache + audit ----
     session.add(

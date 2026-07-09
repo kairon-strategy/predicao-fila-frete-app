@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4-mini"
     openai_max_tokens: int = 1024
 
+    # ---- Governança do LLM (perf/segurança/LGPD — ver docs/GOVERNANCA_IA.md) ----
+    # Timeout duro por chamada ao provedor (evita request pendurado).
+    llm_timeout_seconds: int = 30
+    # Teto de caracteres da pergunta livre antes de ir ao prompt (custo/abuso).
+    llm_max_input_chars: int = 800
+    # Rate limit por tenant no /v1/explain (protege custo do LLM).
+    explain_max_per_min: int = 30
+
     # ---- Sentry ----
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.1

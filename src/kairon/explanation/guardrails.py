@@ -33,9 +33,33 @@ _MONEY_NEAR_FREIGHT = re.compile(
 )
 
 
+# ---- LGPD: PII que NUNCA pode ir ao provedor externo (redigida na entrada) ----
+# Ordem importa: padrões mais específicos/longos primeiro (CNPJ antes de CPF antes
+# de telefone) para não haver casamento parcial. Ver docs/GOVERNANCA_IA.md §6.
+_PII_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    ("cnpj", re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")),
+    ("cpf", re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")),
+    ("telefone", re.compile(r"(?<!\d)(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?9?\d{4}[-\s]?\d{4}(?!\d)")),
+    ("cep", re.compile(r"\b\d{5}-\d{3}\b")),
+]
+_PII_TOKEN = "[dado pessoal removido]"
+
+
+def scan_pii(text: str) -> list[str]:
+    """Detecta (sem alterar) tipos de PII presentes. Só para observabilidade —
+    NUNCA logar o valor em si, apenas o tipo."""
+    return [name for name, pat in _PII_PATTERNS if pat.search(text)]
+
+
 def sanitize_input(text: str) -> str:
-    """Remove HTML, markdown e comandos de sistema de input livre do usuário."""
-    cleaned = _HTML_TAG.sub("", text)
+    """Limpa input livre do usuário: redige PII (LGPD), remove HTML, markdown e
+    comandos de sistema. Sempre aplicado antes de montar o prompt."""
+    cleaned = text
+    # PII primeiro: garante que nenhum dado pessoal chegue ao prompt.
+    for _name, pat in _PII_PATTERNS:
+        cleaned = pat.sub(_PII_TOKEN, cleaned)
+    cleaned = _HTML_TAG.sub("", cleaned)
     # Markdown ANTES do token: senão o stripper de markdown comeria os colchetes de "[removido]".
     cleaned = _MARKDOWN.sub("", cleaned)
     cleaned = _SYSTEM_CMDS.sub("[removido]", cleaned)

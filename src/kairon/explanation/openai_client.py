@@ -23,7 +23,13 @@ class OpenAIClient:
         if settings.openai_api_key:
             from openai import AsyncOpenAI
 
-            self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+            # Timeout duro por chamada; retry do SDK desligado (usamos tenacity abaixo,
+            # senão o retry seria duplo). Ver docs/GOVERNANCA_IA.md §7.
+            self._client = AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                timeout=float(settings.llm_timeout_seconds),
+                max_retries=0,
+            )
 
     @property
     def is_enabled(self) -> bool:
