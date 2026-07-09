@@ -16,6 +16,7 @@ from jinja2 import Environment, TemplateSyntaxError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kairon.audit.writer import write_event
 from kairon.core.config import settings
 from kairon.core.exceptions import NotFoundError, ValidationError
 from kairon.explanation.models import CopilotPrompt, CopilotSettings
@@ -124,11 +125,22 @@ async def upsert_prompt(
     row.content = content
     row.updated_by = updated_by
     await session.flush()
+    # Auditoria (governança): quem editou qual prompt. Sem PII; não guarda o texto.
+    await write_event(
+        session,
+        event_type="copilot.prompt_updated",
+        entity_id=prompt_key,
+        payload={"by": updated_by, "prompt_key": prompt_key, "chars": len(content)},
+        tenant_id=tenant_id,
+    )
     return {"key": prompt_key, "content": content, "scope": "tenant" if tenant_id else "global"}
 
 
 async def reset_prompt(
-    session: AsyncSession, tenant_id: uuid.UUID | None, prompt_key: str
+    session: AsyncSession,
+    tenant_id: uuid.UUID | None,
+    prompt_key: str,
+    updated_by: str | None = None,
 ) -> None:
     """Remove o override do escopo -> volta a herdar (global ou arquivo)."""
     _validate_prompt_key(prompt_key)
@@ -136,6 +148,13 @@ async def reset_prompt(
     if row is not None:
         await session.delete(row)
         await session.flush()
+        await write_event(
+            session,
+            event_type="copilot.prompt_reset",
+            entity_id=prompt_key,
+            payload={"by": updated_by, "prompt_key": prompt_key},
+            tenant_id=tenant_id,
+        )
 
 
 # --------------------------------------------------------------- settings -----
@@ -252,4 +271,12 @@ async def update_settings(
             setattr(row, field, data[field])  # None limpa o override (volta a herdar)
     row.updated_by = updated_by
     await session.flush()
+    # Auditoria (governança): quem mudou o quê. Config, sem PII.
+    await write_event(
+        session,
+        event_type="copilot.settings_updated",
+        entity_id="settings",
+        payload={"by": updated_by, "changed": sorted(data.keys()), "values": data},
+        tenant_id=tenant_id,
+    )
     return await get_settings(session, tenant_id)

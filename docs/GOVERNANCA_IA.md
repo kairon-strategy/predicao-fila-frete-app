@@ -134,6 +134,9 @@ Implementados em `explanation/guardrails.py` — funções puras, testadas:
 - **Observabilidade LGPD:** quando PII é redigida na entrada, gera log
   `explanation.pii_redacted` + evento de auditoria com o **tipo** de PII (nunca o
   valor). Permite medir exposição sem armazenar dado pessoal. ✅
+- **Auditoria de configuração:** toda mudança na config do copiloto gera evento —
+  `copilot.prompt_updated` / `copilot.prompt_reset` / `copilot.settings_updated`
+  (com o autor e os campos alterados; sem o texto do prompt nem PII). ✅
 - **Logs não contêm o conteúdo do prompt** — só `prediction_id` e `source`. ✅
 - **Violações de guardrail** viram `log.error("guardrail.violation")` (captável no
   Sentry). ✅

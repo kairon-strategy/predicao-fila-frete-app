@@ -55,7 +55,9 @@ async def reset_prompt(
     session: AsyncSession = Depends(get_session),
     principal: Principal = Depends(_write),
 ) -> Response:
-    await copilot_config.reset_prompt(session, principal.tenant_id, prompt_key)
+    await copilot_config.reset_prompt(
+        session, principal.tenant_id, prompt_key, updated_by=str(principal.user_id)
+    )
     return Response(status_code=204)
 
 
