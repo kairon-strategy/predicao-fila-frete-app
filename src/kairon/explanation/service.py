@@ -1,9 +1,10 @@
 """Orquestra a explicação: predição -> prompt -> (cache|LLM|template) -> guardrails -> audit.
 
-O provedor de LLM é resolvido em `claude_client.get_client()` (OpenAI se
-OPENAI_API_KEY estiver setada, senão Claude). Degrade gracioso: sem nenhuma
-chave, gera um texto de template estático (determinístico) que também passa
-pelos guardrails. Nunca crasha por falta de LLM.
+Prompt e parâmetros do LLM (provedor, modelo, tokens, temperatura, max_words,
+liga/desliga) são resolvidos por tenant em `copilot_config` (tenant -> global ->
+default). O provedor é escolhido em `claude_client.get_client_for`. Degrade
+gracioso: sem chave ou com o copiloto desligado, gera um texto de template
+estático (determinístico) que também passa pelos guardrails. Nunca crasha.
 """
 
 from __future__ import annotations
@@ -21,8 +22,8 @@ from kairon.audit.writer import write_event
 from kairon.core.config import settings
 from kairon.core.exceptions import GuardrailViolation, NotFoundError, UpstreamError
 from kairon.core.logging import get_logger
-from kairon.explanation import guardrails
-from kairon.explanation.claude_client import get_client
+from kairon.explanation import copilot_config, guardrails
+from kairon.explanation.claude_client import get_client_for
 from kairon.explanation.models import ExplanationCache
 from kairon.explanation.schemas import ExplainResponse
 from kairon.prediction.db_models import Prediction
@@ -39,9 +40,16 @@ _env = Environment(
 )
 
 
-def _render_prompt(pred: Prediction, question: str | None = None) -> str:
-    template_name = "explain_with_question.j2" if question else "explain_prediction.j2"
-    template = _env.get_template(template_name)
+async def _render_prompt(
+    session: AsyncSession,
+    tenant_id: uuid.UUID | None,
+    pred: Prediction,
+    question: str | None = None,
+) -> str:
+    prompt_key = "explain_with_question" if question else "explain_prediction"
+    # Conteúdo efetivo do prompt: override do tenant -> global -> template em disco.
+    content = await copilot_config.resolve_prompt(session, tenant_id, prompt_key)
+    template = _env.from_string(content)
     return template.render(
         origem=pred.origem,
         destino=pred.destino,
@@ -110,7 +118,9 @@ async def explain(
                 payload={"types": sorted(set(pii_types)), "prediction_id": str(pred.id)},
                 tenant_id=pred.tenant_id,
             )
-    prompt = _render_prompt(pred, clean_question)
+    # Config efetiva do copiloto (tenant -> global -> env).
+    cfg = await copilot_config.resolve_config(session, tenant_id)
+    prompt = await _render_prompt(session, tenant_id, pred, clean_question)
     prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
     # ---- cache (TTL 1h) ----
@@ -135,27 +145,40 @@ async def explain(
 
     # ---- gera (LLM com guardrail de saída, senão template) ----
     allowed = [pred.frete_r_per_ton, pred.banda_p10, pred.banda_p90]
-    client = get_client()
     explanation: str | None = None
     source = "template"
 
-    if client.is_enabled:
-        try:
-            candidate = await client.complete(prompt)
-            if candidate.strip():
-                # Valida a saída do LLM ANTES de aceitar. Se violar, cai no template.
-                explanation = guardrails.enforce_output(
-                    candidate, allowed_values=allowed, origem=pred.origem, destino=pred.destino
+    # cfg.enabled=False (master switch por tenant) pula o LLM e usa template.
+    if cfg.enabled:
+        client = get_client_for(cfg.provider)
+        if client.is_enabled:
+            try:
+                candidate = await client.complete(
+                    prompt,
+                    model=cfg.model,
+                    max_tokens=cfg.max_tokens,
+                    temperature=cfg.temperature,
                 )
-                source = "llm"
-        except UpstreamError:
-            log.warning("explanation.llm_upstream_error", prediction_id=prediction_id)
-        except GuardrailViolation:
-            # Saída do LLM reprovada no guardrail → degrada para template (não 500).
-            log.warning("explanation.guardrail_fallback", prediction_id=prediction_id)
+                if candidate.strip():
+                    # Valida a saída do LLM ANTES de aceitar. Se violar, cai no template.
+                    explanation = guardrails.enforce_output(
+                        candidate,
+                        allowed_values=allowed,
+                        origem=pred.origem,
+                        destino=pred.destino,
+                        max_words=cfg.max_words,
+                    )
+                    source = "llm"
+            except UpstreamError:
+                log.warning("explanation.llm_upstream_error", prediction_id=prediction_id)
+            except GuardrailViolation:
+                # Saída do LLM reprovada no guardrail → degrada para template (não 500).
+                log.warning("explanation.guardrail_fallback", prediction_id=prediction_id)
 
     if explanation is None:
-        # Fallback determinístico — também passa pelo guardrail (defesa em profundidade).
+        # Fallback determinístico — passa pelo guardrail (defesa em profundidade).
+        # Sem max_words do tenant: o template é curto e confiável; max_words serve
+        # só para conter verbosidade do LLM (evita 500 com limite muito baixo).
         raw = _static_explanation(pred, clean_question)
         explanation = guardrails.enforce_output(
             raw, allowed_values=allowed, origem=pred.origem, destino=pred.destino

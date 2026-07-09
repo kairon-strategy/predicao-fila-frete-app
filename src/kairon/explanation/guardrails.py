@@ -81,11 +81,13 @@ def enforce_output(
     allowed_values: list[float],
     origem: str,
     destino: str,
+    max_words: int | None = None,
 ) -> str:
     """Valida a saída do LLM. Levanta GuardrailViolation se violar uma regra dura."""
     # 1. Tamanho.
-    if len(text.split()) > MAX_WORDS:
-        _violate("resposta excede 500 palavras", text)
+    limit = max_words if max_words is not None else MAX_WORDS
+    if len(text.split()) > limit:
+        _violate(f"resposta excede {limit} palavras", text)
 
     # 2. Deve citar a rota (origem OU destino) e ao menos um valor fornecido.
     lower = text.lower()

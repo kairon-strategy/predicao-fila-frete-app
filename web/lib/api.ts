@@ -147,6 +147,38 @@ export type UserResponse = {
   is_active: boolean;
   tenant_id: string;
 };
+export type CopilotPromptItem = {
+  key: string;
+  label: string;
+  content: string;
+  scope: "tenant" | "global" | "default";
+  is_override: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
+  default: string;
+};
+export type CopilotSettingsValues = {
+  enabled: boolean | null;
+  provider: string | null;
+  model: string | null;
+  max_tokens: number | null;
+  temperature: number | null;
+  max_words: number | null;
+  rate_limit_per_min: number | null;
+};
+export type CopilotSettings = {
+  has_override: boolean;
+  override: CopilotSettingsValues;
+  effective: {
+    enabled: boolean;
+    provider: string;
+    model: string;
+    max_tokens: number;
+    temperature: number | null;
+    max_words: number;
+    rate_limit_per_min: number;
+  };
+};
 export type TenantResponse = { id: string; name: string; slug: string };
 export type RouteRecord = {
   route_id: string;
@@ -363,6 +395,19 @@ export const api = {
     request<Alert>(`/v1/alerts/${id}/resolve`, { method: "POST" }),
   detectAlerts: () =>
     request<{ created: number; detail: string }>("/v1/alerts/detect", { method: "POST" }),
+
+  // copilot config (admin — copilot:read/write)
+  listCopilotPrompts: () => request<CopilotPromptItem[]>("/v1/copilot/prompts"),
+  saveCopilotPrompt: (key: string, content: string) =>
+    request<{ key: string }>(`/v1/copilot/prompts/${key}`, {
+      method: "PUT",
+      body: { content },
+    }),
+  resetCopilotPrompt: (key: string) =>
+    request<void>(`/v1/copilot/prompts/${key}`, { method: "DELETE" }),
+  getCopilotSettings: () => request<CopilotSettings>("/v1/copilot/settings"),
+  updateCopilotSettings: (patch: Partial<CopilotSettingsValues>) =>
+    request<CopilotSettings>("/v1/copilot/settings", { method: "PUT", body: patch }),
 
   // ops
   health: () => request<Health>("/health", { auth: false }),

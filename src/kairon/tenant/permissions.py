@@ -25,6 +25,8 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "roles:write": ("Perfis", "Criar, editar e excluir perfis"),
     "tenant:read": ("Empresa", "Ver dados da empresa"),
     "tenant:write": ("Empresa", "Editar dados da empresa"),
+    "copilot:read": ("Copiloto", "Ver a configuração do copiloto"),
+    "copilot:write": ("Copiloto", "Editar prompts e configuração do copiloto"),
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)

@@ -5,9 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kairon.core.config import settings
 from kairon.core.database import get_session
-from kairon.explanation import service
+from kairon.explanation import copilot_config, service
 from kairon.explanation.schemas import ExplainRequest, ExplainResponse
 from kairon.tenant import ratelimit
 from kairon.tenant.auth import Principal, require_permission
@@ -23,9 +22,10 @@ async def explain_endpoint(
     session: AsyncSession = Depends(get_session),
     principal: Principal = Depends(_explain_guard),
 ) -> ExplainResponse:
-    # Rate limit por tenant: protege o custo do LLM contra abuso (ver §7).
+    # Rate limit por tenant (limite configurável): protege o custo do LLM (ver §7).
+    cfg = await copilot_config.resolve_config(session, principal.tenant_id)
     rl_key = f"explain:{principal.tenant_id}"
-    if not ratelimit.hit(rl_key, max_attempts=settings.explain_max_per_min, window_seconds=60):
+    if not ratelimit.hit(rl_key, max_attempts=cfg.rate_limit_per_min, window_seconds=60):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="limite de explicações por minuto atingido; tente novamente em instantes",

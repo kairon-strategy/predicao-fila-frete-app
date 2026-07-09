@@ -6,7 +6,7 @@ service cai no template estático (não crasha). Retry com tenacity em erro tran
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -24,7 +24,14 @@ class LLMClient(Protocol):
     @property
     def is_enabled(self) -> bool: ...
 
-    async def complete(self, prompt: str) -> str: ...
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str: ...
 
 
 class ClaudeClient:
@@ -49,15 +56,24 @@ class ClaudeClient:
         wait=wait_exponential(multiplier=0.5, max=4),
         reraise=True,
     )
-    async def complete(self, prompt: str) -> str:
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
         """Manda um prompt e devolve o texto. Levanta UpstreamError se falhar de vez."""
         if self._client is None:
             raise UpstreamError("Claude desabilitado (sem ANTHROPIC_API_KEY)")
+        extra: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
         try:
             message = await self._client.messages.create(
-                model=settings.anthropic_model,
-                max_tokens=settings.anthropic_max_tokens,
+                model=model or settings.anthropic_model,
+                max_tokens=max_tokens or settings.anthropic_max_tokens,
                 messages=[{"role": "user", "content": prompt}],
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001 — normaliza qualquer erro do SDK
             log.warning("claude.call_failed", error=str(exc))
@@ -90,3 +106,40 @@ def get_client() -> LLMClient:
         else:
             _client = ClaudeClient()
     return _client
+
+
+# Caches por provedor (para seleção configurável via copilot_config).
+_openai_client: LLMClient | None = None
+_anthropic_client: LLMClient | None = None
+
+
+def _openai() -> LLMClient:
+    global _openai_client
+    if _openai_client is None:
+        from kairon.explanation.openai_client import OpenAIClient
+
+        _openai_client = OpenAIClient()
+    return _openai_client
+
+
+def _anthropic() -> LLMClient:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = ClaudeClient()
+    return _anthropic_client
+
+
+def get_client_for(provider: str | None) -> LLMClient:
+    """Devolve o client do provedor pedido: 'openai' | 'anthropic' | 'auto'/None.
+
+    'auto' usa OpenAI se habilitado, senão Claude. Respeita o stub de teste:
+    se `_client` foi injetado desabilitado, honra-o (mantém testes em template).
+    """
+    if _client is not None and not _client.is_enabled:
+        return _client
+    if provider == "openai":
+        return _openai()
+    if provider == "anthropic":
+        return _anthropic()
+    oc = _openai()
+    return oc if oc.is_enabled else _anthropic()

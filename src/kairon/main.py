@@ -150,6 +150,7 @@ def _register_metrics(app: FastAPI) -> None:
 def _register_routers(app: FastAPI) -> None:
     """Importes locais: mantêm o boot resiliente e evitam ciclos de import."""
     from kairon.alerts.router import router as alerts_router
+    from kairon.explanation.config_router import router as copilot_config_router
     from kairon.explanation.router import router as explanation_router
     from kairon.prediction.router import router as prediction_router
     from kairon.simulation.router import router as simulation_router
@@ -158,6 +159,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(tenant_router, prefix="/v1")
     app.include_router(prediction_router, prefix="/v1", tags=["prediction"])
     app.include_router(explanation_router, prefix="/v1", tags=["explanation"])
+    app.include_router(copilot_config_router, prefix="/v1")
     app.include_router(simulation_router, prefix="/v1", tags=["simulation"])
     app.include_router(alerts_router, prefix="/v1")
 

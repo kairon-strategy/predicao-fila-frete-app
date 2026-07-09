@@ -8,6 +8,8 @@ template estático (não crasha). Retry com tenacity em erro transiente.
 
 from __future__ import annotations
 
+from typing import Any
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from kairon.core.config import settings
@@ -40,15 +42,24 @@ class OpenAIClient:
         wait=wait_exponential(multiplier=0.5, max=4),
         reraise=True,
     )
-    async def complete(self, prompt: str) -> str:
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
         """Manda um prompt e devolve o texto. Levanta UpstreamError se falhar de vez."""
         if self._client is None:
             raise UpstreamError("OpenAI desabilitado (sem OPENAI_API_KEY)")
+        extra: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
         try:
             response = await self._client.responses.create(
-                model=settings.openai_model,
+                model=model or settings.openai_model,
                 input=prompt,
-                max_output_tokens=settings.openai_max_tokens,
+                max_output_tokens=max_tokens or settings.openai_max_tokens,
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001 — normaliza qualquer erro do SDK
             log.warning("openai.call_failed", error=str(exc))

@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  Bot,
   Building2,
   KeyRound,
   Loader2,
   Lock,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   ShieldAlert,
   ShieldCheck,
@@ -42,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -54,6 +57,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   api,
   ApiError,
+  type CopilotPromptItem,
+  type CopilotSettings,
   type PermissionInfo,
   type RoleRecord,
   type TenantResponse,
@@ -858,6 +863,356 @@ function RoleDialog({
   );
 }
 
+/* ----------------------------- Copiloto ----------------------------- */
+
+const PROVIDERS: { value: string; label: string }[] = [
+  { value: "auto", label: "Automático (OpenAI → Claude)" },
+  { value: "openai", label: "OpenAI" },
+  { value: "anthropic", label: "Claude (Anthropic)" },
+];
+
+const SCOPE_BADGE: Record<string, { label: string; cls: string }> = {
+  tenant: { label: "Personalizado", cls: "border-gold/40 text-gold" },
+  global: { label: "Padrão global", cls: "text-muted-foreground" },
+  default: { label: "Padrão de fábrica", cls: "text-muted-foreground" },
+};
+
+function CopilotoTab({ isAdmin }: { isAdmin: boolean }) {
+  const { data: settings, isLoading } = useSWR(isAdmin ? "copilot-settings" : null, () =>
+    api.getCopilotSettings(),
+  );
+  const { data: prompts } = useSWR(isAdmin ? "copilot-prompts" : null, () =>
+    api.listCopilotPrompts(),
+  );
+
+  if (!isAdmin) {
+    return (
+      <Card className="max-w-2xl">
+        <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
+          <ShieldAlert className="size-5 text-warning" />
+          Apenas administradores podem configurar o copiloto.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid gap-6">
+      {isLoading || !settings ? (
+        <Skeleton className="h-72 w-full max-w-3xl" />
+      ) : (
+        <CopilotSettingsForm settings={settings} />
+      )}
+      {prompts ? (
+        <CopilotPromptsCard prompts={prompts} />
+      ) : (
+        <Skeleton className="h-48 w-full max-w-3xl" />
+      )}
+    </div>
+  );
+}
+
+function CopilotSettingsForm({ settings }: { settings: CopilotSettings }) {
+  const eff = settings.effective;
+  const ov = settings.override;
+  const [enabled, setEnabled] = useState<boolean>(eff.enabled);
+  const [provider, setProvider] = useState<string>(ov.provider ?? "auto");
+  const [model, setModel] = useState(ov.model ?? "");
+  const [maxTokens, setMaxTokens] = useState(ov.max_tokens?.toString() ?? "");
+  const [temperature, setTemperature] = useState(ov.temperature?.toString() ?? "");
+  const [maxWords, setMaxWords] = useState(ov.max_words?.toString() ?? "");
+  const [rate, setRate] = useState(ov.rate_limit_per_min?.toString() ?? "");
+  const [saving, setSaving] = useState(false);
+
+  function numOrNull(s: string): number | null {
+    const t = s.trim();
+    if (!t) return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.updateCopilotSettings({
+        enabled,
+        provider,
+        model: model.trim() || null,
+        max_tokens: numOrNull(maxTokens),
+        temperature: numOrNull(temperature),
+        max_words: numOrNull(maxWords),
+        rate_limit_per_min: numOrNull(rate),
+      });
+      await mutate("copilot-settings");
+      toast.success("Configuração do copiloto salva.");
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao salvar a configuração."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="edge-gold-top shadow-premium max-w-3xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bot className="size-5 text-gold" />
+          Configuração do copiloto
+        </CardTitle>
+        <CardDescription>
+          Provedor, modelo e limites. Campos em branco herdam o padrão (mostrado como dica).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={save} className="grid gap-5">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label>Copiloto</Label>
+              <Select value={enabled ? "on" : "off"} onValueChange={(v) => setEnabled(v === "on")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="on">Ligado (usa IA)</SelectItem>
+                  <SelectItem value="off">Desligado (só template)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Provedor</Label>
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="cp-model">Modelo</Label>
+            <Input
+              id="cp-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={`herda: ${eff.model}`}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="cp-tokens">Máx. tokens</Label>
+              <Input
+                id="cp-tokens"
+                inputMode="numeric"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(e.target.value)}
+                placeholder={`herda: ${eff.max_tokens}`}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cp-temp">Temperatura (0–2)</Label>
+              <Input
+                id="cp-temp"
+                inputMode="decimal"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+                placeholder={eff.temperature != null ? `herda: ${eff.temperature}` : "padrão do modelo"}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cp-words">Máx. palavras da resposta</Label>
+              <Input
+                id="cp-words"
+                inputMode="numeric"
+                value={maxWords}
+                onChange={(e) => setMaxWords(e.target.value)}
+                placeholder={`herda: ${eff.max_words}`}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cp-rate">Limite por minuto (por empresa)</Label>
+              <Input
+                id="cp-rate"
+                inputMode="numeric"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                placeholder={`herda: ${eff.rate_limit_per_min}`}
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Segurança sempre ativa (não editável): redação de PII/LGPD e trava anti-alucinação de
+            valor de frete.
+          </p>
+
+          <Separator />
+          <div className="flex justify-end">
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              Salvar
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CopilotPromptsCard({ prompts }: { prompts: CopilotPromptItem[] }) {
+  const [editing, setEditing] = useState<CopilotPromptItem | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
+
+  async function reset(key: string) {
+    setResetting(key);
+    try {
+      await api.resetCopilotPrompt(key);
+      await mutate("copilot-prompts");
+      toast.success("Prompt restaurado ao padrão.");
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao restaurar."));
+    } finally {
+      setResetting(null);
+    }
+  }
+
+  return (
+    <Card className="shadow-premium max-w-3xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Pencil className="size-5 text-gold" />
+          Prompts do copiloto
+        </CardTitle>
+        <CardDescription>
+          Edite o texto que instrui a IA em cada fluxo. Templates Jinja — mantenha as variáveis
+          entre chaves.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {prompts.map((p) => {
+          const badge = SCOPE_BADGE[p.scope] ?? SCOPE_BADGE.default;
+          return (
+            <div
+              key={p.key}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-secondary/30 p-4"
+            >
+              <div className="min-w-0">
+                <div className="font-medium">{p.label}</div>
+                <div className="mt-1 flex items-center gap-2">
+                  <Badge variant="outline" className={badge.cls}>
+                    {badge.label}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {p.content.length} caracteres
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditing(p)}>
+                  <Pencil className="size-4" />
+                  Editar
+                </Button>
+                {p.is_override && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={resetting === p.key}
+                    onClick={() => reset(p.key)}
+                  >
+                    {resetting === p.key ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-4" />
+                    )}
+                    Restaurar
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+      <PromptEditDialog prompt={editing} onClose={() => setEditing(null)} />
+    </Card>
+  );
+}
+
+function PromptEditDialog({
+  prompt,
+  onClose,
+}: {
+  prompt: CopilotPromptItem | null;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setContent(prompt?.content ?? "");
+  }, [prompt?.key, prompt?.content]);
+
+  async function save() {
+    if (!prompt) return;
+    if (!content.trim()) {
+      toast.error("O prompt não pode ficar vazio.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.saveCopilotPrompt(prompt.key, content);
+      await mutate("copilot-prompts");
+      toast.success("Prompt salvo.");
+      onClose();
+    } catch (err) {
+      toast.error(errMessage(err, "Falha ao salvar o prompt."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!prompt} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{prompt?.label}</DialogTitle>
+          <DialogDescription>
+            Texto que instrui a IA. Preserve as variáveis Jinja (ex.: {"{{ origem }}"},{" "}
+            {"{{ frete }}"}) — elas são preenchidas com os dados da predição.
+          </DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          className="min-h-[320px] font-mono text-xs"
+          spellCheck={false}
+        />
+        <DialogFooter className="gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setContent(prompt?.default ?? "")}
+            disabled={saving}
+          >
+            <RotateCcw className="size-4" />
+            Carregar padrão
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Salvar prompt
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ----------------------------- Page ----------------------------- */
 
 export default function ConfiguracoesPage() {
@@ -867,7 +1222,7 @@ export default function ConfiguracoesPage() {
 
   return (
     <>
-      <PageHeader title="Configurações" subtitle="Perfil, empresa e usuários" />
+      <PageHeader title="Configurações" subtitle="Perfil, empresa, usuários e copiloto" />
 
       <Tabs value={tab} onValueChange={setTab} className="w-full">
         <TabsList className="mb-6">
@@ -889,6 +1244,12 @@ export default function ConfiguracoesPage() {
               Perfis
             </TabsTrigger>
           )}
+          {isAdmin && (
+            <TabsTrigger value="copiloto">
+              <Bot className="size-4" />
+              Copiloto
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {tab === "perfil" && <PerfilTab />}
@@ -897,6 +1258,7 @@ export default function ConfiguracoesPage() {
           <UsuariosTab isAdmin={!!isAdmin} currentUserId={user?.user_id} />
         )}
         {tab === "perfis" && <PerfisTab isAdmin={!!isAdmin} />}
+        {tab === "copiloto" && <CopilotoTab isAdmin={!!isAdmin} />}
       </Tabs>
     </>
   );
