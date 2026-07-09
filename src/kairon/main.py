@@ -22,6 +22,7 @@ import kairon.alerts.models  # noqa: E402,F401
 import kairon.audit.models  # noqa: E402,F401
 import kairon.explanation.models  # noqa: E402,F401
 import kairon.ingestion.anp.models  # noqa: E402,F401
+import kairon.knowledge.models  # noqa: E402,F401
 import kairon.prediction.db_models  # noqa: E402,F401
 import kairon.tenant.models  # noqa: E402,F401
 from kairon import __version__
@@ -152,6 +153,7 @@ def _register_routers(app: FastAPI) -> None:
     from kairon.alerts.router import router as alerts_router
     from kairon.explanation.config_router import router as copilot_config_router
     from kairon.explanation.router import router as explanation_router
+    from kairon.knowledge.router import router as knowledge_router
     from kairon.prediction.router import router as prediction_router
     from kairon.simulation.router import router as simulation_router
     from kairon.tenant.router import router as tenant_router
@@ -160,6 +162,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(prediction_router, prefix="/v1", tags=["prediction"])
     app.include_router(explanation_router, prefix="/v1", tags=["explanation"])
     app.include_router(copilot_config_router, prefix="/v1")
+    app.include_router(knowledge_router, prefix="/v1", tags=["knowledge"])
     app.include_router(simulation_router, prefix="/v1", tags=["simulation"])
     app.include_router(alerts_router, prefix="/v1")
 

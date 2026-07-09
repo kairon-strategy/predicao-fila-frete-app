@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4-mini"
     openai_max_tokens: int = 1024
 
+    # ---- RAG / embeddings (base de conhecimento do copiloto) ----
+    openai_embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = 1536
+    rag_top_k: int = 5  # nº de chunks recuperados por pergunta
+
     # ---- Governança do LLM (perf/segurança/LGPD — ver docs/GOVERNANCA_IA.md) ----
     # Timeout duro por chamada ao provedor (evita request pendurado).
     llm_timeout_seconds: int = 30

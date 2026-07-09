@@ -22,6 +22,7 @@ import kairon.alerts.models  # noqa: F401
 import kairon.audit.models  # noqa: F401
 import kairon.explanation.models  # noqa: F401
 import kairon.ingestion.anp.models  # noqa: F401
+import kairon.knowledge.models  # noqa: F401
 import kairon.prediction.db_models  # noqa: F401
 import kairon.tenant.models  # noqa: F401
 
