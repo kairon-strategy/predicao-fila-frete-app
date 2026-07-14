@@ -9,7 +9,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from kairon.simulation.monte_carlo import SENSITIVITY, run_monte_carlo, simulate_segment
+from kairon.simulation.monte_carlo import (
+    SENSITIVITY,
+    run_monte_carlo,
+    segment_of,
+    simulate_segment,
+)
 from kairon.tenant.auth import Principal, require_permission
 
 router = APIRouter()
@@ -113,4 +118,85 @@ async def simulate_segments_endpoint(
             "piso_pct": request.piso_pct,
         },
         segments=results,
+    )
+
+
+# ---- Monte Carlo POR ROTA (para orçamento: tarifa simulada de cada rota) ----
+class RouteBase(BaseModel):
+    origem: str = Field(..., min_length=2, max_length=120)
+    destino: str = Field(..., min_length=2, max_length=120)
+    produto: str = Field(..., min_length=2, max_length=60)
+    base_freight: float = Field(..., gt=0, description="Frete base R$/t da rota")
+
+
+class SimulateRoutesRequest(BaseModel):
+    diesel_pct: float = Field(default=0.0, ge=-0.10, le=0.30)
+    safra_pct: float = Field(default=0.0, ge=-0.25, le=0.05)
+    piso_pct: float = Field(default=0.0, ge=0.0, le=0.15)
+    iterations: int = Field(default=2000, ge=100, le=20000)
+    routes: list[RouteBase] = Field(..., min_length=1, max_length=500)
+
+
+class RouteSimResult(BaseModel):
+    origem: str
+    destino: str
+    produto: str
+    segment: str
+    base_freight: float
+    mean: float
+    p10: float
+    p50: float
+    p90: float
+    delta_pct: float
+
+
+class SimulateRoutesResponse(BaseModel):
+    iterations: int
+    drivers: dict[str, float]
+    routes: list[RouteSimResult]
+
+
+@router.post(
+    "/simulate/routes",
+    response_model=SimulateRoutesResponse,
+    summary="Monte Carlo por rota (tarifa simulada p/ orçamento)",
+)
+async def simulate_routes_endpoint(
+    request: SimulateRoutesRequest,
+    _p: Principal = Depends(_sim_guard),
+) -> SimulateRoutesResponse:
+    results: list[RouteSimResult] = []
+    for i, r in enumerate(request.routes):
+        seg = segment_of(r.produto) or "grão"  # fallback neutro se produto sem segmento
+        sim = simulate_segment(
+            seg,
+            r.base_freight,
+            diesel_pct=request.diesel_pct,
+            safra_pct=request.safra_pct,
+            piso_pct=request.piso_pct,
+            iterations=request.iterations,
+            seed=42 + i,
+        )
+        results.append(
+            RouteSimResult(
+                origem=r.origem,
+                destino=r.destino,
+                produto=r.produto,
+                segment=seg,
+                base_freight=sim.base_freight,
+                mean=sim.mean,
+                p10=sim.p10,
+                p50=sim.p50,
+                p90=sim.p90,
+                delta_pct=sim.delta_pct,
+            )
+        )
+    return SimulateRoutesResponse(
+        iterations=request.iterations,
+        drivers={
+            "diesel_pct": request.diesel_pct,
+            "safra_pct": request.safra_pct,
+            "piso_pct": request.piso_pct,
+        },
+        routes=results,
     )

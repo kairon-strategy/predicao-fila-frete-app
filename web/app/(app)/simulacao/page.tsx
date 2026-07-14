@@ -16,15 +16,25 @@ import { toast } from "sonner";
 import useSWR from "swr";
 
 import { PageHeader } from "@/components/page-header";
+import { SegmentFilter } from "@/components/segment-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { ApiError, api, type SimulateSegmentsResponse } from "@/lib/api";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ApiError, api, type SimulateRoutesResponse, type SimulateSegmentsResponse } from "@/lib/api";
 import { csvNum, downloadCsv } from "@/lib/csv";
 import { brl, num } from "@/lib/format";
+import { segmentOf } from "@/lib/segments";
 
 const GOLD = "#c5a572";
 
@@ -53,6 +63,8 @@ export default function SimulacaoPage() {
   const [iterations, setIterations] = useState(5000);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SimulateSegmentsResponse | null>(null);
+  const [routeSim, setRouteSim] = useState<SimulateRoutesResponse | null>(null);
+  const [seg, setSeg] = useState(""); // filtro de commodity da tabela por rota
 
   // Bases por segmento = média do frete atual das rotas de cada segmento (ranking).
   const { data: routes } = useSWR("routes", () => api.getRoutes());
@@ -87,12 +99,35 @@ export default function SimulacaoPage() {
         bases,
       });
       setResult(res);
+      // Simula também POR ROTA (para orçamento). Não bloqueia o resultado por segmento.
+      try {
+        const perRoute = (routes ?? [])
+          .filter((r) => r.frete_r_per_ton > 0)
+          .map((r) => ({
+            origem: r.origem,
+            destino: r.destino,
+            produto: r.produto,
+            base_freight: r.frete_r_per_ton,
+          }));
+        if (perRoute.length > 0) {
+          const rr = await api.simulateRoutes({
+            diesel_pct: diesel / 100,
+            safra_pct: safra / 100,
+            piso_pct: piso / 100,
+            iterations,
+            routes: perRoute,
+          });
+          setRouteSim(rr);
+        }
+      } catch {
+        // mantém os segmentos mesmo se a simulação por rota falhar
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Falha ao rodar a simulação.");
     } finally {
       setLoading(false);
     }
-  }, [diesel, safra, piso, iterations, bases]);
+  }, [diesel, safra, piso, iterations, bases, routes]);
 
   // roda uma vez quando as bases carregam
   const basesReady = (routes?.length ?? 0) > 0;
@@ -109,6 +144,35 @@ export default function SimulacaoPage() {
         p90: s.p90,
       }))
     : [];
+
+  // Tabela por rota (para orçamento), filtrável por commodity.
+  const routeRows = routeSim
+    ? seg
+      ? routeSim.routes.filter((r) => segmentOf(r.produto) === seg)
+      : routeSim.routes
+    : [];
+
+  function exportRoutesCsv() {
+    if (routeRows.length === 0) {
+      toast.error("Sem rotas para exportar.");
+      return;
+    }
+    downloadCsv(
+      `simulacao_rotas_diesel${diesel}_safra${safra}_piso${piso}`,
+      ["Origem", "Destino", "Produto", "Base_R$/t", "P10_R$/t", "P50_R$/t", "P90_R$/t", "Delta_%"],
+      routeRows.map((r) => [
+        r.origem,
+        r.destino,
+        r.produto,
+        csvNum(r.base_freight),
+        csvNum(r.p10),
+        csvNum(r.p50),
+        csvNum(r.p90),
+        csvNum(r.delta_pct, 1),
+      ]),
+    );
+    toast.success("CSV de rotas exportado.");
+  }
 
   return (
     <>
@@ -331,6 +395,85 @@ export default function SimulacaoPage() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     Cada segmento reage de forma própria: grãos são mais sensíveis à safra;
                     fertilizante, ao diesel. Piso ANTT amortece a queda (frete não cai indefinidamente).
+                  </p>
+                </Card>
+
+                {/* ---- Tarifa simulada POR ROTA (para orçamento) ---- */}
+                <Card className="p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="mb-1 text-[11px] uppercase tracking-[0.16em] text-gold">
+                        Tarifa simulada por rota · R$/t
+                      </div>
+                      <h3 className="text-lg font-medium">
+                        Tabela para orçamento — exporte as tarifas por rota
+                      </h3>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportRoutesCsv}
+                      disabled={routeRows.length === 0}
+                    >
+                      <Download className="size-4" /> Exportar CSV (rotas)
+                    </Button>
+                  </div>
+
+                  <div className="mb-4">
+                    <SegmentFilter value={seg} onChange={setSeg} />
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="text-gold">Rota</TableHead>
+                          <TableHead className="text-gold">Produto</TableHead>
+                          <TableHead className="text-right text-gold">Base</TableHead>
+                          <TableHead className="text-right text-gold">P10</TableHead>
+                          <TableHead className="text-right text-gold">P50</TableHead>
+                          <TableHead className="text-right text-gold">P90</TableHead>
+                          <TableHead className="text-right text-gold">Δ%</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {routeRows.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                              {routeSim ? "Sem rotas para o filtro." : "Rode a simulação para ver as tarifas por rota."}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {routeRows.map((r, i) => (
+                          <TableRow key={`${r.origem}-${r.destino}-${i}`}>
+                            <TableCell>
+                              <span className="font-medium">{r.origem}</span>
+                              <span className="text-muted-foreground"> → {r.destino}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+                                {r.produto}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">
+                              {brl(r.base_freight)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-success">{brl(r.p10)}</TableCell>
+                            <TableCell className="text-right font-mono text-gold">{brl(r.p50)}</TableCell>
+                            <TableCell className="text-right font-mono text-warning">{brl(r.p90)}</TableCell>
+                            <TableCell
+                              className={`text-right font-mono ${r.delta_pct >= 0 ? "text-warning" : "text-success"}`}
+                            >
+                              {signedPct(r.delta_pct)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Tarifa simulada de cada rota sob as premissas acima (mesmo motor Monte Carlo).
+                    Use o CSV para colar na sua base orçamentária.
                   </p>
                 </Card>
               </motion.div>

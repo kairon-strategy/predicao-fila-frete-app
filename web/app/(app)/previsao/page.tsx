@@ -15,6 +15,8 @@ import {
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import { SegmentFilter } from "@/components/segment-filter";
+import { segmentOf } from "@/lib/segments";
 import { KpiCard } from "@/components/kpi-card";
 import { FreightAreaChart } from "@/components/charts/freight-area-chart";
 import { Button } from "@/components/ui/button";
@@ -98,16 +100,24 @@ function computeKpis(points: RouteHistoryPoint[]): Kpis {
 
 export default function PrevisaoPage() {
   const [selectedRouteId, setSelectedRouteId] = useState<string>("");
+  const [seg, setSeg] = useState("");
 
   const {
-    data: routes,
+    data: allRoutes,
     error: routesError,
     isLoading: routesLoading,
   } = useSWR<RouteRankingItem[]>("routes", () => api.getRoutes());
 
-  // Default to first route once loaded.
+  // filtro por commodity (client-side)
+  const routes = useMemo(
+    () => (seg ? (allRoutes ?? []).filter((r) => segmentOf(r.produto) === seg) : allRoutes),
+    [allRoutes, seg],
+  );
+
+  // Seleção default / correção quando o filtro muda: garante uma rota válida.
   useEffect(() => {
-    if (!selectedRouteId && routes && routes.length > 0) {
+    if (!routes || routes.length === 0) return;
+    if (!routes.some((r) => r.route_id === selectedRouteId)) {
       setSelectedRouteId(routes[0].route_id);
     }
   }, [routes, selectedRouteId]);
@@ -214,6 +224,11 @@ export default function PrevisaoPage() {
           </Button>
         </div>
       </PageHeader>
+
+      {/* Filtro por commodity */}
+      <div className="mb-5">
+        <SegmentFilter value={seg} onChange={setSeg} />
+      </div>
 
       {noRoutes ? (
         <Card className="edge-gold-top shadow-premium flex flex-col items-center justify-center gap-2 p-12 text-center">

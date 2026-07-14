@@ -270,6 +270,23 @@ export type SimulateSegmentsResponse = {
   drivers: Record<string, number>;
   segments: SegmentSimResult[];
 };
+export type RouteSimResult = {
+  origem: string;
+  destino: string;
+  produto: string;
+  segment: string;
+  base_freight: number;
+  mean: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  delta_pct: number;
+};
+export type SimulateRoutesResponse = {
+  iterations: number;
+  drivers: Record<string, number>;
+  routes: RouteSimResult[];
+};
 export type SegmentBase = { segment: string; base_freight: number };
 export type Alert = {
   id: number;
@@ -383,6 +400,14 @@ export const api = {
     iterations: number;
     bases: SegmentBase[];
   }) => request<SimulateSegmentsResponse>("/v1/simulate/segments", { method: "POST", body }),
+  // Monte Carlo por rota (tarifa simulada de cada rota — para orçamento)
+  simulateRoutes: (body: {
+    diesel_pct: number;
+    safra_pct: number;
+    piso_pct: number;
+    iterations?: number;
+    routes: { origem: string; destino: string; produto: string; base_freight: number }[];
+  }) => request<SimulateRoutesResponse>("/v1/simulate/routes", { method: "POST", body }),
 
   // alerts
   getAlerts: (severity?: string, alertType?: string, status = "active") => {
